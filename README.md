@@ -2,7 +2,11 @@
 
 FoodMind Backend is the only public business API and the system of record for the FoodMind platform. Android and Web clients communicate with this service; they must never call the Agent or model-inference services directly.
 
-> **Current status:** repository framework only. The package structure exists, but the business modules, API contracts, persistence model, security configuration, and service integrations described below are not yet implemented.
+> **Current status:** documentation-first backend hand-off. The reviewed V1–V11
+> PostgreSQL/Flyway scripts, architecture and branch plans, and importable
+> Postman package are present. Java business modules, runtime/database
+> configuration, public OpenAPI, security wiring, and service integrations are
+> intentionally left for implementation through the ordered branch roadmap.
 
 ## Responsibilities
 
@@ -73,7 +77,10 @@ foodmind-backend/
 ├── docs/
 │   ├── api/                       # API conventions and contract notes
 │   ├── architecture/              # Backend architecture decisions
+│   ├── database/                  # PostgreSQL schema hand-off and validation
+│   ├── planning/                  # Ordered feature-branch implementation plans
 │   └── operations/                # Local and deployment runbooks
+├── postman/                       # Directly importable API test assets
 ├── src/main/java/com/foodmind/foodmindbackend/
 │   ├── common/
 │   │   ├── api/                   # Shared API representations
@@ -255,5 +262,9 @@ Do not copy implementation code from another FoodMind repository. Coordinate thr
 
 - [Backend architecture](docs/architecture/overview.md)
 - [Backend architecture, database design, and development plan](docs/architecture/backend-development-plan.md)
+- [Ordered feature-branch delivery roadmap](docs/planning/backend-branch-roadmap.md)
+- [Feature-branch implementation hand-offs](docs/planning/branches/README.md)
+- [PostgreSQL V1–V11 schema guide](docs/database/postgresql-schema-guide.md)
+- [Postman collection and environment guide](postman/README.md)
 - [API conventions](docs/api/conventions.md)
 - [Local development](docs/operations/local-development.md)

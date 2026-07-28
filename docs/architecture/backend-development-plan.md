@@ -32,13 +32,15 @@ The implementation order is:
 
 1. Make the build, PostgreSQL test environment, migrations, error contract, and
    security baseline reliable.
-2. Deliver one P0 vertical slice: account → preferences → authorised
-   candidates → hard rules → deterministic fallback → ordered recommendation.
+2. Deliver account, preferences, and the controlled catalogue.
 3. Add records, groups, visibility, Want to Try, search, and Explore as the
    trusted data foundation for recommendation.
-4. Integrate the Recommendation Agent and model package behind frozen internal
+4. Complete the P0 recommendation slice: authorised candidates → hard rules →
+   deterministic fallback → ordered recommendation.
+5. Integrate the Recommendation Agent and model package behind frozen internal
    contracts without changing the public client contract.
-5. Add Cooking, Chatbot, analytics, security evidence, and cloud delivery.
+6. Add Cooking, Chatbot, analytics, optional media, security evidence, and
+   cloud delivery.
 
 ## 2. Evidence reviewed and scope reconciliation
 
@@ -97,8 +99,10 @@ The design is based on:
 ### 2.3 Current implementation baseline
 
 - The repository contains one Spring Boot application class and one context
-  test; no business modules, entities, migrations, OpenAPI file, security
-  configuration, or integrations exist.
+  test plus the reviewed architecture/branch plans, the executable V1–V11
+  PostgreSQL schema pack, its database guide, and Postman hand-off assets.
+  Business modules, entities, runtime datasource/security configuration,
+  public OpenAPI implementation, and integrations do not yet exist.
 - Spring Boot `4.1.0` and Java `17` are compatible according to the current
   Spring Boot system requirements.
 - The current Maven test reaches Spring Boot successfully but fails while
@@ -415,6 +419,10 @@ identity fields according to a documented retention policy.
 Indexes: unique token hash; `(user_id, revoked_at, expires_at)`;
 `token_family_id`.
 
+V2's mutation guard makes identity/token metadata immutable, makes rotation
+and revocation one-way, locks and validates the forward successor, and permits
+physical cleanup only after expiry or revocation.
+
 #### `user_preference`
 
 - `user_id uuid` primary/foreign key
@@ -423,7 +431,8 @@ Indexes: unique token hash; `(user_id, revoked_at, expires_at)`;
 - `preferred_area varchar(120)`
 - optional `preferred_latitude numeric(9,6)` and
   `preferred_longitude numeric(9,6)`; no map integration is implied
-- `max_distance_km numeric(6,2)` nullable
+- `max_distance_km numeric(6,2)` nullable and valid only with both preferred
+  coordinates
 - `cleanliness_priority smallint` check `0..5`
 - `minimum_cleanliness_evidence_score numeric(3,2)` nullable
 - `food_goal varchar(40)` nullable
@@ -573,7 +582,10 @@ them.
 
 The optional media workflow must issue bounded uploads and verify ownership,
 type, size, and final object metadata. Clients never receive general S3
-credentials.
+credentials. V5 permits only `PENDING -> READY`, `PENDING -> DELETED`, or
+`READY -> DELETED`; declared/verified metadata cannot be rewritten and physical
+deletion is rejected. Attachment queries still require an owned `READY`,
+non-deleted asset.
 
 #### `want_to_try`
 
@@ -598,13 +610,17 @@ to prevent duplicate active saves for each source type. Re-authorise a
   `area`, optional latitude/longitude/distance, `mood`, `requested_for`
 - `request_context jsonb` containing the immutable versioned request snapshot
 - `public_contract_version`, `agent_contract_version`
-- `model_version`, `model_status`, `fallback_status`
+- `model_version`, `model_status`, `fallback_version`, `fallback_status`
 - `correlation_id`, `agent_trace_id`
 - safe `failure_code`
 - `created_at`, `started_at`, `completed_at`, `version`
 
 Indexes: `(user_id, created_at DESC)`, `group_id`, `status`, and
 `parent_session_id`.
+
+The database enforces the complete status/model/fallback tuple matrix and the
+one-way `CREATED -> PROCESSING -> terminal` lifecycle. Terminal rows, request
+snapshots, candidates, and reason evidence are immutable.
 
 #### `recommendation_candidate`
 
@@ -660,8 +676,8 @@ rejection to `0`; no event means unknown.
 
 - `cooking_plan(id, user_id, source_recipe_id nullable, status, servings,
   max_minutes, max_budget, currency, request_context jsonb,
-  agent_contract_version, fallback_status, correlation_id, agent_trace_id,
-  failure_code, created_at, completed_at, version)`
+  agent_contract_version, fallback_version, fallback_status, correlation_id,
+  agent_trace_id, failure_code, created_at, completed_at, version)`
 - `cooking_plan_input(plan_id, sequence_no, ingredient_name, quantity, unit,
   source)` where source is `MANUAL` or `AUTHORISED_PANTRY`
 - `cooking_plan_ingredient(plan_id, sequence_no, ingredient_name, quantity,
@@ -671,7 +687,11 @@ rejection to `0`; no event means unknown.
 
 Snapshot the output instead of joining live recipe steps when returning an old
 plan. This preserves what the user actually received even after catalogue
-maintenance.
+maintenance. TX1 inserts the parent as `CREATED`, appends all inputs, moves it
+to `PROCESSING`, and commits. TX2 locks the row, appends validated outputs,
+makes the terminal update last, and commits. V8 rejects request drift, terminal
+reversal, parent/child deletion, child update, late input, and post-terminal
+output insertion.
 
 A reusable `pantry_item` table is a separate decision. The initial Cooking
 vertical slice can submit manual ingredients and still satisfy the frozen MVP.
@@ -681,7 +701,8 @@ vertical slice can submit manual ingredients and still satisfy the frozen MVP.
 - `chat_session(id, user_id, title, status, created_at, updated_at, version)`
 - `chat_message(id, session_id, role, content, route, response_status,
   correlation_id, agent_trace_id, created_at)`
-- `chat_reference(id, session_id, introduced_by_message_id, source_type,
+- `chat_reference(id, session_id, origin, introduced_by_message_id nullable,
+  source_type,
   food_record_id nullable, food_product_id nullable, place_id nullable,
   created_at)`
 - `chat_message_source(message_id, reference_id, sequence_no,
@@ -692,7 +713,9 @@ but does not grant permanent access. Search and source resolution re-check
 permission. If group access is later removed, the source is unavailable for new
 retrieval. The owner must decide whether already generated assistant text is
 retained as conversation history or hidden under a stricter derived-content
-revocation policy; see the decision gates.
+revocation policy; see the decision gates. `USER_SHARED` references have no
+introducing message; `MESSAGE_INTRODUCED` references require a same-session
+message.
 
 ### 5.9 Cross-cutting tables
 
@@ -727,7 +750,11 @@ Authorised search is a union of:
 2. non-deleted group records for groups where the caller is currently active;
 3. active curated Food Products and Places.
 
-Every branch must be permission-scoped before ranking and pagination.
+Every branch is permission-scoped before ranking and pagination. V6 functions
+also accept the bounded query/source filters, an all-or-none opaque keyset
+cursor, and page size; they perform FTS/trigram matching, global deterministic
+ordering, and `LIMIT pageSize + 1` inside PostgreSQL. They return a bounded
+excerpt, never the raw `tsvector` or full authorised corpus.
 
 Do not persist `DashboardMetric` as a source table. Implement read-only SQL
 queries/views for:
@@ -753,6 +780,8 @@ pseudonymised interaction snapshot from:
 
 - explicit `ACCEPTED` and `REJECTED` feedback labels;
 - later ratings and Would Eat Again signals;
+- stable domain-separated HMAC modelling keys derived from the raw Meal and
+  Place-Meal offering IDs;
 - the candidate's point-in-time feature snapshot and schema version;
 - the session timestamp, candidate rank/type, and model/fallback metadata; and
 - stable HMAC-derived modelling user keys rather than emails or public user
@@ -762,6 +791,25 @@ The export excludes passive non-selection labels, chat content, record comments,
 precise location, and raw group-member data. It records the producing Backend
 commit, schema version, row count, time range, and checksum so `foodmind-ml` can
 register an immutable dataset snapshot.
+
+`ml_interaction_export_source_v1` is a restricted **raw decision source**, not a
+publishable or privacy-safe dataset. Its `user_id`, direct row identifiers, and
+raw Meal/offering IDs and `raw_feature_snapshot` never leave the Backend export
+boundary. The exporter derives domain-separated HMAC keys using `user:`,
+`meal:`, and `offering:` inputs so identities cannot collide across domains.
+For each exact `feature_schema_version`, it must construct a new typed feature
+object from a reviewed key/type/range allow-list, reject unknown versions and
+unknown/nested keys, and run prohibited-field tests before computing the output
+checksum. A row whose feature schema and snapshot are both null may feed only a
+separately declared collaborative-interaction output and must be counted as
+excluded from the LR feature dataset. It must never pass through or redact the
+raw JSON object in place.
+
+The exporter reads through
+`foodmind_ml_interaction_export_rows_v1(decisionFrom, decisionTo,
+observedThrough)`. Its half-open decision window and exclusive observation
+cutoff make later-signal selection reproducible; the manifest records all three
+bounds and the chosen signal timestamps.
 
 ### 5.11 Migration sequence
 
@@ -773,7 +821,7 @@ register an immutable dataset snapshot.
 | `V4__catalogue.sql` | cuisines, meals, places, offerings, products, recipes, ingredients, evidence |
 | `V5__groups_and_records.sql` | groups, membership, invitations, food/drink records, media metadata |
 | `V6__saved_search_and_explore.sql` | Want to Try, search columns/indexes and projection support |
-| `V7__recommendations.sql` | sessions, candidates, reasons, feedback |
+| `V7__recommendations.sql` | sessions, candidates, reasons, feedback, group recommendation shares |
 | `V8__cooking.sql` | plans, input/output snapshots |
 | `V9__chat.sql` | sessions, messages, references, grounding links |
 | `V10__cross_cutting_and_analytics.sql` | idempotency, audit, analytics views |
@@ -819,6 +867,18 @@ and update both clients and all fixtures together.
 | `PATCH` | `/users/me` | Update profile |
 | `GET` | `/users/me/preferences` | Read preferences |
 | `PUT` | `/users/me/preferences` | Replace versioned preference set |
+
+#### Controlled catalogue
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/catalogue/reference-data` | Read controlled cuisine/dietary/allergen choices |
+| `GET` | `/catalogue/meals/{mealId}` | Read an active controlled Meal projection |
+| `GET` | `/catalogue/places/{placeId}` | Read an active controlled Place projection |
+| `GET` | `/catalogue/products/{productId}` | Read an active controlled Food Product projection |
+
+Catalogue curation remains an operator-controlled import/migration concern.
+There is no public catalogue write API.
 
 #### Records and history
 
@@ -882,12 +942,28 @@ with `parentSessionId`.
 | `POST` | `/chat/sessions/{sessionId}/messages` | Persist user message, orchestrate, validate, persist answer |
 | `GET` | `/chat/sessions/{sessionId}/messages` | Page through safe history |
 
+Persisted assistant route codes are exactly `SEARCH`, `SUMMARY`, `COMPARE`,
+`NAVIGATION`, and `OUT_OF_SCOPE`. Recommendation and Cooking intents map to a
+safe `OUT_OF_SCOPE` response and never invoke those workflows through Chat.
+
 #### Analytics
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/dashboard` | Presentation-neutral metrics for a date range |
 | `GET` | `/weekly-recaps/{weekStart}` | One user's timezone-aware weekly projection |
+
+#### Optional media
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/media/uploads` | Create an owned pending asset and bounded upload instruction |
+| `POST` | `/media/{mediaAssetId}/finalise` | Verify object metadata and mark an owned asset ready |
+| `DELETE` | `/media/{mediaAssetId}` | Soft-delete an owned media asset under the attachment policy |
+
+These endpoints are introduced only when BE-030 passes its integration-stability
+gate. The server chooses every object key and storage limit; clients never send
+arbitrary bucket keys or receive general object-storage credentials.
 
 ### 6.3 Recommendation response invariants
 
@@ -1151,7 +1227,7 @@ the test suite is green.
 | BE-001 | Record ADRs for modular monolith, JWT/session strategy, and permission model | none | Accepted ADRs and reviewed decision gates |
 | BE-002 | Fix Maven/test baseline and add Testcontainers PostgreSQL | none | `mvnw test` passes without a developer-owned database |
 | BE-003 | Add local Docker PostgreSQL and `.env.example`/profile binding | BE-002 | documented clean startup; no secrets committed |
-| BE-004 | Add Flyway and V1–V4 migrations | BE-002 | empty DB migrate/validate test |
+| BE-004 | Add Flyway and the coordinated V1–V11 schema foundation | BE-002 | empty DB migrate/validate, deterministic-seed replay, and expected-object tests |
 | BE-005 | Add common error envelope, correlation filter, clock/ID abstractions | BE-002 | MVC tests for validation and unexpected errors |
 | BE-006 | Implement user/auth/session persistence and security chain | BE-004/005 | register/login/refresh/logout tests; 401/403 distinction |
 | BE-007 | Implement profile/preferences and hard-constraint domain model | BE-004/006 | owner-only API and DB constraint tests |
@@ -1251,7 +1327,9 @@ Keep PRs reviewable and independently green. Suggested sequence:
 13. `feat/cooking-plan`
 14. `feat/chat-grounding`
 15. `feat/dashboard-recap`
-16. `chore/cloud-security-uat`
+16. `feat/media-upload` (optional gate; omit only through an explicit scope
+    decision after the core integrations are stable)
+17. `chore/cloud-security-uat`
 
 Each PR must include the affected contract, migration, allow/deny tests, failure
 case, local run instructions, and evidence. Avoid one Sprint-sized PR.
