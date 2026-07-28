@@ -254,5 +254,6 @@ Do not copy implementation code from another FoodMind repository. Coordinate thr
 ## Further Reading
 
 - [Backend architecture](docs/architecture/overview.md)
+- [Backend architecture, database design, and development plan](docs/architecture/backend-development-plan.md)
 - [API conventions](docs/api/conventions.md)
 - [Local development](docs/operations/local-development.md)
