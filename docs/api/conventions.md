@@ -124,12 +124,37 @@ A recommendation-generation response should contain:
 - `modelStatus`
 - `fallbackStatus`
 - Exactly three intentionally different recommendation cards when enough valid candidates exist
+- Stable candidate order with the highest-ranked lead candidate first
 - Candidate, Meal, and Place identifiers as applicable
 - Recommendation type: `PERSONAL`, `EXPLORATORY`, or `GROUP_INSPIRED`
 - Structured reason codes
 - Grounded explanation text
 
 The model score is not itself an explanation.
+
+Clients may spotlight only the first candidate initially, but they must retain
+the full ordered response so “try another” can reveal the remaining candidates
+without silently creating a new recommendation session. A new generation
+request must create or identify a distinct session according to the contract.
+
+Recommendation requests may include an authorised `groupId` plus current meal
+type, budget, area/distance, mood, and time context. The backend resolves group
+membership and never trusts client-supplied group evidence.
+
+## Cooking-Plan Contract
+
+Cooking-plan requests use manually supplied or previously stored authorised
+pantry/ingredient context together with servings, time, budget, and dietary
+rules. Automatic inventory capture, grocery purchasing, and recipe invention
+outside the controlled catalogue remain outside the MVP.
+
+## Explore Composition
+
+Explore is a client destination, not a public-content permission mode. Its
+items must come from existing permission-aware group-feed, authorised search,
+Want to Try, or curated catalogue contracts. The backend must not return
+private records owned by another user, inactive-group content, or a
+follower-style public feed.
 
 ## Feedback Contract
 

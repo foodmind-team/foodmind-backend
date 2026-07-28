@@ -13,10 +13,10 @@ This repository owns:
 - Food and drink records
 - Personal history
 - Trusted groups, membership, and content visibility
-- Group feeds and Want to Try items
+- Group feeds, shared-decision context, and Want to Try items
 - Meal, place, product, and recipe catalogue data
 - Authorised platform search
-- Recommendation-session orchestration
+- Recommendation-session orchestration and ordered candidate delivery
 - Recommendation feedback events
 - Cooking-plan and Chatbot request orchestration
 - Dashboard metrics and weekly recaps
@@ -31,6 +31,26 @@ This repository does not own:
 - Runtime model inference implementation
 - Android or Web presentation logic
 - Direct public-internet restaurant search
+- Public or follower-based social feeds
+
+## Product Experience Contract
+
+The clients organise the same backend capabilities around two home modes:
+
+- **Eat out & delivery** is the default. A prominent generation command uses
+  the user's authorised history, trusted-group evidence, current context, and
+  curated catalogue candidates.
+- **Cooking** submits manually supplied pantry/ingredient, time, budget,
+  serving, and dietary context to the separate Cooking Planner workflow.
+
+The recommendation response still contains up to three intentionally different
+ordered candidates. Clients initially spotlight the lead candidate and may
+display the remaining candidates through an explicit “try another” interaction
+without creating a new session.
+
+Groups remains a core shared workspace. An Explore screen may compose
+authorised group-visible records and curated platform content, but the backend
+does not provide a public social feed or bypass visibility checks.
 
 ## System Boundary
 
@@ -124,6 +144,7 @@ Planned endpoint groups include:
 - `/drink-records`
 - `/history`
 - `/groups`
+- permission-aware group-feed/search endpoints used to compose Explore
 - `/want-to-try`
 - `/recommendations`
 - `/cooking-plans`

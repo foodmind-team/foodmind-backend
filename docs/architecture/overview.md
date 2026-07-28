@@ -64,10 +64,27 @@ Client
   → private inference service, when available
   → structured result validation
   → candidate/evidence persistence
-  → three recommendation cards
+  → ordered Personal, Exploratory, and Group-inspired candidates
 ```
 
 If Agent or inference processing fails, the backend returns a deterministic ranking with an explicit fallback status.
+
+The client initially spotlights the first candidate. Cycling through returned
+alternatives is a presentation action inside the same recommendation session,
+while a true re-recommendation request is a separate feedback/command event.
+
+### Explore request
+
+```text
+Client Explore destination
+  → Spring Boot authentication
+  → ownership and active-group-membership scope
+  → group-visible records and curated catalogue content
+  → permission-safe post summaries
+```
+
+Explore does not introduce public visibility, follower relationships, or
+public-internet restaurant search.
 
 ### Chatbot search request
 
@@ -142,6 +159,16 @@ External search infrastructure is outside the MVP.
 ## Analytics
 
 The backend owns metric definitions so both clients render identical values. Queries should return presentation-neutral DTOs containing labels, periods, values, units, and empty-state metadata.
+
+## Client Experience Alignment
+
+Android and Web may use different layouts, but both expose:
+
+- a top-level **Eat out & delivery / Cooking** mode choice;
+- recommendation as the default home job;
+- Groups as the shared decision workspace;
+- Explore as a permission-safe composition of existing authorised content; and
+- one lead recommendation at a time backed by the same ordered candidate set.
 
 ## Evolution Rules
 

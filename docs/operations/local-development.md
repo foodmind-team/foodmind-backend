@@ -87,6 +87,19 @@ These are conventions to implement, not evidence of current availability:
 | Agent service | `http://localhost:8001` |
 | Inference service | `http://localhost:8002` |
 
+## Product-Flow Smoke Checks
+
+Before an integration PR, verify:
+
+1. A recommendation request with an authorised group returns an ordered
+   candidate set with the lead candidate first.
+2. The same response can drive Web and Android lead-result/alternate-result UI.
+3. Cooking uses ingredient or pantry context without requiring automatic
+   inventory collection.
+4. Explore queries return only private-owner, active-group, or curated content
+   permitted by the relevant endpoint.
+5. Recommendation, Cooking Planner, and Chatbot remain separate request paths.
+
 ## Troubleshooting Checklist
 
 ### Application context fails
