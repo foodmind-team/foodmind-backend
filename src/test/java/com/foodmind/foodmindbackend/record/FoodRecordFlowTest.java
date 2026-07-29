@@ -196,8 +196,8 @@ class FoodRecordFlowTest extends PostgreSqlContainerSupport {
                                   "groupId": "33000000-0000-4000-8000-000000000001"
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].message", containsString("Branch 07")));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         mockMvc.perform(post("/api/v1/food-records")
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))

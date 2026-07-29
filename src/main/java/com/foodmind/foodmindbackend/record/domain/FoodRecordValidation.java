@@ -61,8 +61,8 @@ public final class FoodRecordValidation {
         if (comment != null && comment.length() > MAX_COMMENT_LENGTH) {
             errors.add(new ApiFieldError("comment", "SIZE", "Comment must be 4000 characters or fewer."));
         }
-        if (visibility == FoodRecordVisibility.GROUP) {
-            errors.add(new ApiFieldError("visibility", "UNSUPPORTED_VISIBILITY", "Group food records are enabled by Branch 07."));
+        if (visibility == FoodRecordVisibility.GROUP && groupId == null) {
+            errors.add(new ApiFieldError("groupId", "REQUIRED", "Group food records require a groupId."));
         }
         if (visibility == FoodRecordVisibility.PRIVATE && groupId != null) {
             errors.add(new ApiFieldError("groupId", "VISIBILITY_COMBINATION", "Private food records cannot include a groupId."));

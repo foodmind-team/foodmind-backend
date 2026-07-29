@@ -1047,6 +1047,217 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/FoodRecordResponse'
+    CreateGroupRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          example: Lunch Crew
+        description:
+          type: string
+          nullable: true
+          maxLength: 2000
+    UpdateGroupRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          nullable: true
+          maxLength: 2000
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - ARCHIVED
+    GroupResponse:
+      type: object
+      required:
+        - id
+        - name
+        - createdByUserId
+        - status
+        - createdAt
+        - updatedAt
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdByUserId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - ARCHIVED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+    CreateInvitationRequest:
+      type: object
+      properties:
+        expiresInMinutes:
+          type: integer
+          minimum: 1
+          maximum: 43200
+        expiresInHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 72
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+    GroupInvitationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: Raw invitation token returned once. The backend stores only its SHA-256 hash.
+        expiresAt:
+          type: string
+          format: date-time
+        maxUses:
+          type: integer
+        useCount:
+          type: integer
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - EXHAUSTED
+            - REVOKED
+            - EXPIRED
+    JoinGroupRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          maxLength: 256
+    GroupMemberResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        role:
+          type: string
+          enum:
+            - OWNER
+            - MEMBER
+        joinedAt:
+          type: string
+          format: date-time
+    GroupFeedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupFeedItem'
+        nextCursor:
+          type: string
+          nullable: true
+    GroupFeedItem:
+      type: object
+      properties:
+        sourceType:
+          type: string
+          enum:
+            - FOOD_RECORD
+            - RECOMMENDATION_SHARE
+        sourceId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        actorUserId:
+          type: string
+          format: uuid
+        actorDisplayName:
+          type: string
+        foodRecordId:
+          type: string
+          format: uuid
+          nullable: true
+        mealNameSnapshot:
+          type: string
+          nullable: true
+        recommendationShareId:
+          type: string
+          format: uuid
+          nullable: true
+        recommendationCandidateId:
+          type: string
+          format: uuid
+          nullable: true
+        message:
+          type: string
+          nullable: true
+    ShareRecommendationRequest:
+      type: object
+      required:
+        - recommendationCandidateId
+      properties:
+        recommendationCandidateId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          nullable: true
+          maxLength: 2000
+    GroupRecommendationShareResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        sharedByUserId:
+          type: string
+          format: uuid
+        recommendationCandidateId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -1185,6 +1396,333 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /groups:
+    post:
+      tags:
+        - Groups
+      summary: Create a trusted group.
+      description: The authenticated creator becomes the active OWNER membership in the same transaction.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Groups
+      summary: List trusted groups for the authenticated active member.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Caller groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /groups/{groupId}:
+    get:
+      tags:
+        - Groups
+      summary: Read trusted group metadata.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+        - Groups
+      summary: Update or archive a trusted group.
+      description: Owner-only. ARCHIVED stops future protected group-content authorization.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroupRequest'
+      responses:
+        '200':
+          description: Updated group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /groups/{groupId}/invitations:
+    post:
+      tags:
+        - Groups
+      summary: Create a group invitation.
+      description: Owner-only. The raw token is returned once; only its SHA-256 hash is persisted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupInvitationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /group-invitations/join:
+    post:
+      tags:
+        - Groups
+      summary: Join a trusted group with a raw invitation token.
+      description: Locks the invitation row and activates or reactivates the caller membership.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '200':
+          description: Caller membership after join.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMemberResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /groups/join:
+    post:
+      tags:
+        - Groups
+      summary: Join a trusted group with a raw invitation token.
+      description: Compatibility alias for /group-invitations/join.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '200':
+          description: Caller membership after join.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMemberResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /groups/{groupId}/members:
+    get:
+      tags:
+        - Groups
+      summary: List active group members.
+      description: Requires active membership and exposes only group-display profile fields.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupMemberResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /groups/{groupId}/members/{userId}:
+    delete:
+      tags:
+        - Groups
+      summary: Remove a member or leave the group.
+      description: Owners may remove members; users may remove themselves. The last active owner cannot disappear.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Membership ended.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /groups/{groupId}/feed:
+    get:
+      tags:
+        - Groups
+      summary: Read the authorised group feed.
+      description: Authorization is enforced in SQL with active membership and active group status. Cursor ordering is occurredAt desc, sourceType asc, sourceId desc.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Group feed page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupFeedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /groups/{groupId}/recommendation-shares:
+    post:
+      tags:
+        - Groups
+      summary: Share an owned recommendation candidate into a group.
+      description: Requires candidate ownership and active membership in the target active group.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareRecommendationRequest'
+      responses:
+        '201':
+          description: Recommendation candidate shared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupRecommendationShareResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /catalogue/reference-data:
     get:
       tags:
@@ -1481,8 +2019,8 @@ paths:
     post:
       tags:
         - Food Records
-      summary: Create an owner-controlled private food record.
-      description: Owner is derived from the JWT. GROUP visibility is rejected until Branch 07 supplies live group-membership permission.
+      summary: Create an owner-controlled food record.
+      description: Owner is derived from the JWT. GROUP visibility requires active membership in the target active group.
       security:
         - bearerAuth: []
       parameters:
