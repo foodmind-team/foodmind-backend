@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:18.4
+    container_name: foodmind-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-foodmind}
+      POSTGRES_USER: ${POSTGRES_USER:-foodmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-foodmind_local_password}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - foodmind-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER:-foodmind} -d $${POSTGRES_DB:-foodmind}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  foodmind-postgres-data:

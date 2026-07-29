@@ -2,13 +2,14 @@
 
 ## Current State
 
-The repository is scaffolded but does not yet provide a complete local runtime configuration. This runbook establishes the expected workflow for implementation.
+The repository provides a PostgreSQL-backed local runtime baseline. Flyway owns
+schema creation, and tests use a disposable PostgreSQL container rather than H2.
 
 ## Prerequisites
 
 - Java 17
 - Git
-- Docker Desktop or a local PostgreSQL installation
+- Docker Desktop
 - A shell capable of running the Maven Wrapper
 
 Confirm Java:
@@ -19,16 +20,21 @@ java -version
 
 ## Environment
 
-Create a local environment file outside version control or configure environment variables through the IDE.
+Copy `.env.example` to `.env` for local Docker usage or configure the same
+variables through the IDE. Do not commit populated secrets.
 
-Minimum planned values:
+Minimum values:
 
 ```text
 SPRING_PROFILES_ACTIVE=local
 DB_URL=jdbc:postgresql://localhost:5432/foodmind
 DB_USERNAME=foodmind
 DB_PASSWORD=<local-only-password>
-JWT_SECRET=<local-only-development-secret>
+JWT_ISSUER=foodmind-local
+JWT_AUDIENCE=foodmind-clients
+JWT_PUBLIC_KEY=<local-only-development-public-key-or-placeholder>
+DELEGATION_JWT_ISSUER=foodmind-backend-local
+DELEGATION_JWT_PUBLIC_KEY=<local-only-development-public-key-or-placeholder>
 AGENT_SERVICE_BASE_URL=http://localhost:8001
 AGENT_SERVICE_TOKEN=<local-only-token>
 INFERENCE_SERVICE_BASE_URL=http://localhost:8002
@@ -39,7 +45,13 @@ Never commit the populated values.
 
 ## Recommended Startup Order
 
-1. PostgreSQL
+1. PostgreSQL:
+
+   ```powershell
+   docker compose up -d postgres
+   docker compose ps
+   ```
+
 2. Backend
 3. Intelligence inference service
 4. Intelligence Agent service
@@ -64,7 +76,7 @@ macOS/Linux:
 Run the application:
 
 ```powershell
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 ## Database Workflow
@@ -74,6 +86,24 @@ Run the application:
 - Migrations are ordered and forward-only.
 - Seed catalogue data must be reproducible and safe to share.
 - Testcontainers should create an isolated PostgreSQL instance for integration tests.
+- Inspect migration history:
+
+  ```powershell
+  docker compose exec postgres psql -U foodmind -d foodmind -c "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
+  ```
+
+- Reset the local database volume:
+
+  ```powershell
+  docker compose down -v
+  docker compose up -d postgres
+  ```
+
+- Stop PostgreSQL without deleting data:
+
+  ```powershell
+  docker compose down
+  ```
 
 ## Expected Local URLs
 
