@@ -1547,6 +1547,230 @@ components:
         createdAt:
           type: string
           format: date-time
+    WantToTrySourceType:
+      type: string
+      enum:
+        - FOOD_RECORD
+        - MEAL
+        - FOOD_PRODUCT
+        - PLACE
+    SaveWantToTryRequest:
+      type: object
+      required:
+        - sourceType
+        - sourceId
+      properties:
+        sourceType:
+          $ref: '#/components/schemas/WantToTrySourceType'
+        sourceId:
+          type: string
+          format: uuid
+        note:
+          type: string
+          maxLength: 2000
+          nullable: true
+    WantToTrySourceSummary:
+      type: object
+      nullable: true
+      properties:
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+          maxLength: 500
+        imageReference:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          nullable: true
+          enum:
+            - PRIVATE
+            - GROUP
+            - CURATED
+        ownerUserId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+    WantToTryResponse:
+      type: object
+      required:
+        - id
+        - sourceType
+        - sourceId
+        - createdAt
+        - sourceAvailable
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceType:
+          $ref: '#/components/schemas/WantToTrySourceType'
+        sourceId:
+          type: string
+          format: uuid
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        sourceAvailable:
+          type: boolean
+          description: False means the saved row remains owner-visible, but the live source no longer resolves for this actor.
+        source:
+          $ref: '#/components/schemas/WantToTrySourceSummary'
+    WantToTryPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageResponse'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WantToTryResponse'
+    SearchSourceType:
+      type: string
+      enum:
+        - FOOD_RECORD
+        - FOOD_PRODUCT
+        - PLACE
+    SearchResultResponse:
+      type: object
+      required:
+        - sourceType
+        - sourceId
+        - title
+        - visibility
+      properties:
+        sourceType:
+          $ref: '#/components/schemas/SearchSourceType'
+        sourceId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+          maxLength: 500
+        imageReference:
+          type: string
+          nullable: true
+        relevance:
+          type: number
+          nullable: true
+        visibility:
+          type: string
+          enum:
+            - PRIVATE
+            - GROUP
+            - CURATED
+        ownerUserId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+    SearchPageResponse:
+      type: object
+      required:
+        - items
+        - hasNext
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultResponse'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    ExploreSourceType:
+      type: string
+      enum:
+        - GROUP_RECORD
+        - CURATED_PRODUCT
+        - CURATED_PLACE
+    ExploreResultResponse:
+      type: object
+      required:
+        - sourceType
+        - sourceId
+        - title
+        - visibility
+      properties:
+        sourceType:
+          $ref: '#/components/schemas/ExploreSourceType'
+        sourceId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+          maxLength: 500
+        imageReference:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum:
+            - GROUP
+            - CURATED
+        ownerUserId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+    ExplorePageResponse:
+      type: object
+      required:
+        - items
+        - hasNext
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExploreResultResponse'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -1621,6 +1845,202 @@ components:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
 paths:
+  /want-to-try:
+    post:
+      tags:
+        - Saved Search and Explore
+      summary: Save an authorised source to Want to Try.
+      description: Owner is derived from the JWT. The source is resolved and authorised before insert; duplicate active saves are idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveWantToTryRequest'
+      responses:
+        '201':
+          description: Saved reference.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WantToTryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    get:
+      tags:
+        - Saved Search and Explore
+      summary: List the authenticated user's Want to Try rows.
+      description: Rows are owner-only. Each source is re-authorised live; revoked sources return sourceAvailable=false without leaking old content.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Owner saved references.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WantToTryPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /want-to-try/{id}:
+    delete:
+      tags:
+        - Saved Search and Explore
+      summary: Soft-delete an owned Want to Try row.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Saved row deleted or already absent for this owner.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /search:
+    get:
+      tags:
+        - Saved Search and Explore
+      summary: Search authorised platform content.
+      description: Calls the PostgreSQL authorised search function with bounded query text, allow-listed source types, and all-or-none cursor pagination.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: types
+          in: query
+          required: false
+          description: Comma-separated allow-list of FOOD_RECORD, FOOD_PRODUCT, PLACE.
+          schema:
+            type: string
+            example: PLACE,FOOD_PRODUCT
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: Compatibility parameter; cursor pagination requires 0.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Authorised search page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /explore:
+    get:
+      tags:
+        - Saved Search and Explore
+      summary: Compose permission-safe Explore content.
+      description: Returns only live group-authorised records and active curated product/place cards. No public feed or external lookup is performed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: types
+          in: query
+          required: false
+          description: Comma-separated allow-list of FOOD_RECORD, FOOD_PRODUCT, PLACE.
+          schema:
+            type: string
+        - name: topics
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: Compatibility parameter; cursor pagination requires 0.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Permission-safe Explore page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExplorePageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /auth/register:
     post:
       tags:
