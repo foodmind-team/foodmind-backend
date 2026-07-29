@@ -227,7 +227,7 @@
                   "});",
                   "const responseJson = pm.response.json();",
                   "const responseData = responseJson && responseJson.data !== undefined ? responseJson.data : responseJson;",
-                  "pm.test(\"Stable not-found code\", function () { pm.expect(responseData.code).to.eql(\"NOT_FOUND\"); });"
+                  "pm.test(\"Stable not-found code\", function () { pm.expect(responseData.code).to.eql(\"RESOURCE_NOT_FOUND\"); });"
                 ]
               }
             }

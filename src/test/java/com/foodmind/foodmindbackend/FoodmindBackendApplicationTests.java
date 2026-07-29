@@ -19,7 +19,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.jdbc.JdbcTestUtils;
 
 @SpringBootTest
 class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
@@ -35,17 +34,19 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
 
     @BeforeEach
     void cleanMutableFixtureTables() {
-        JdbcTestUtils.deleteFromTables(
-                jdbcTemplate,
-                "recommendation_feedback",
-                "recommendation_candidate",
-                "recommendation_session",
-                "auth_session",
-                "chat_reference",
-                "chat_session",
-                "audit_event",
-                "user_preference",
-                "app_user");
+        jdbcTemplate.execute("""
+                TRUNCATE TABLE
+                    recommendation_feedback,
+                    recommendation_candidate,
+                    recommendation_session,
+                    auth_session,
+                    chat_reference,
+                    chat_session,
+                    audit_event,
+                    user_preference,
+                    app_user
+                CASCADE
+                """);
     }
 
     @Test
@@ -170,7 +171,7 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
     @Test
     void recommendationCandidateShapeConstraintsRejectIncompleteEvidence() {
         UUID userId = createUser("candidate");
-        UUID sessionId = createSucceededRecommendationSession(userId, OffsetDateTime.parse("2026-07-28T02:00:00Z"));
+        UUID sessionId = createProcessingRecommendationSession(userId, OffsetDateTime.parse("2026-07-28T02:00:00Z"));
         UUID placeMealId = jdbcTemplate.queryForObject("SELECT id FROM place_meal ORDER BY id LIMIT 1", UUID.class);
 
         assertSqlRejected("""
@@ -238,8 +239,9 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
                 VALUES (?, ?, 'USER_SHARED', 'FOOD_PRODUCT', ?)
                 """, UUID.randomUUID(), chatSessionId, foodProductId);
 
-        UUID sessionId = createSucceededRecommendationSession(userId, OffsetDateTime.parse("2026-07-28T02:00:00Z"));
+        UUID sessionId = createProcessingRecommendationSession(userId, OffsetDateTime.parse("2026-07-28T02:00:00Z"));
         UUID candidateId = createReturnedCandidate(sessionId);
+        completeRecommendationSession(sessionId, OffsetDateTime.parse("2026-07-28T02:00:01Z"));
         jdbcTemplate.update("""
                 INSERT INTO recommendation_feedback (
                     id, session_id, candidate_id, user_id, event_type, idempotency_key, created_at
@@ -294,20 +296,31 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
                 """, sessionId, userId, familyId, tokenHash);
     }
 
-    private UUID createSucceededRecommendationSession(UUID userId, OffsetDateTime startedAt) {
+    private UUID createProcessingRecommendationSession(UUID userId, OffsetDateTime startedAt) {
         UUID sessionId = UUID.randomUUID();
-        OffsetDateTime completedAt = startedAt.plusSeconds(1);
         jdbcTemplate.update("""
                 INSERT INTO recommendation_session (
                     id, user_id, status, request_context, public_contract_version, agent_contract_version,
-                    model_version, model_status, fallback_status, correlation_id, created_at, started_at, completed_at
+                    model_status, fallback_status, correlation_id, created_at, started_at
                 )
                 VALUES (
-                    ?, ?, 'SUCCEEDED', '{}'::jsonb, 'public-v1', 'agent-v1',
-                    'model-v1', 'SUCCEEDED', 'NOT_REQUIRED', ?, ?, ?, ?
+                    ?, ?, 'PROCESSING', '{}'::jsonb, 'public-v1', 'agent-v1',
+                    'PENDING', 'NOT_STARTED', ?, ?, ?
                 )
-                """, sessionId, userId, UUID.randomUUID(), startedAt, startedAt, completedAt);
+                """, sessionId, userId, UUID.randomUUID(), startedAt, startedAt);
         return sessionId;
+    }
+
+    private void completeRecommendationSession(UUID sessionId, OffsetDateTime completedAt) {
+        jdbcTemplate.update("""
+                UPDATE recommendation_session
+                SET status = 'SUCCEEDED',
+                    model_version = 'model-v1',
+                    model_status = 'SUCCEEDED',
+                    fallback_status = 'NOT_REQUIRED',
+                    completed_at = ?
+                WHERE id = ?
+                """, completedAt, sessionId);
     }
 
     private UUID createReturnedCandidate(UUID sessionId) {
