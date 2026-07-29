@@ -1047,6 +1047,295 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/FoodRecordResponse'
+    CreateDrinkRecordRequest:
+      type: object
+      required:
+        - drinkName
+        - shopNameSnapshot
+        - occurredAt
+      properties:
+        drinkName:
+          type: string
+          maxLength: 160
+          example: Iced Matcha Latte
+        placeId:
+          type: string
+          format: uuid
+          nullable: true
+          example: 21000000-0000-4000-8000-000000000001
+        shopNameSnapshot:
+          type: string
+          maxLength: 160
+          example: Orchard Tea Bar
+        occurredAt:
+          type: string
+          format: date-time
+          example: "2026-07-28T04:15:00Z"
+        price:
+          type: number
+          minimum: 0
+          nullable: true
+          example: 5.80
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          nullable: true
+          example: SGD
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+          example: 4.5
+        comment:
+          type: string
+          maxLength: 4000
+          nullable: true
+          example: Clean tea flavour.
+        sweetnessLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          nullable: true
+          example: 2
+        iceLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          nullable: true
+          example: 1
+        wouldBuyAgain:
+          type: boolean
+          nullable: true
+          example: true
+        visibility:
+          type: string
+          enum:
+            - PRIVATE
+            - GROUP
+          default: PRIVATE
+          example: PRIVATE
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Required for GROUP visibility and rejected for PRIVATE visibility.
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Must reference an owned READY media asset.
+    UpdateDrinkRecordRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateDrinkRecordRequest'
+      description: Partial update body. Null and omitted values are not used to clear existing fields in this branch.
+    DrinkRecordResponse:
+      type: object
+      required:
+        - id
+        - drinkName
+        - shopNameSnapshot
+        - occurredAt
+        - visibility
+        - createdAt
+        - updatedAt
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        drinkName:
+          type: string
+          example: Iced Matcha Latte
+        placeId:
+          type: string
+          format: uuid
+          nullable: true
+        shopNameSnapshot:
+          type: string
+          example: Orchard Tea Bar
+        occurredAt:
+          type: string
+          format: date-time
+        price:
+          $ref: '#/components/schemas/FoodRecordMoney'
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+          description: Present on detail responses; list cards return null.
+        sweetnessLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          nullable: true
+        iceLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          nullable: true
+        wouldBuyAgain:
+          type: boolean
+          nullable: true
+        visibility:
+          type: string
+          enum:
+            - PRIVATE
+            - GROUP
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present on detail responses; list cards return null.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          example: 0
+    DrinkRecordPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageResponse'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/DrinkRecordResponse'
+    HistoryResponse:
+      type: object
+      required:
+        - fromUtcInclusive
+        - toUtcExclusive
+        - period
+        - types
+        - timeZone
+        - buckets
+        - entries
+      properties:
+        fromUtcInclusive:
+          type: string
+          format: date-time
+          description: UTC lower bound derived once from the requested local or offset boundary.
+        toUtcExclusive:
+          type: string
+          format: date-time
+          description: UTC exclusive upper bound derived once from the requested local or offset boundary.
+        period:
+          type: string
+          enum:
+            - DAY
+            - WEEK
+            - MONTH
+        types:
+          type: array
+          items:
+            type: string
+            enum:
+              - FOOD
+              - DRINK
+        timeZone:
+          type: string
+          example: Asia/Singapore
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryBucket'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque cursor using occurredAt DESC, sourceType ASC, sourceId DESC ordering.
+    HistoryBucket:
+      type: object
+      required:
+        - bucketStart
+        - totalCount
+        - foodCount
+        - drinkCount
+      properties:
+        bucketStart:
+          type: string
+          format: date
+          description: Local DAY/WEEK/MONTH bucket start. Weeks start on Monday.
+        totalCount:
+          type: integer
+          format: int64
+          minimum: 0
+        foodCount:
+          type: integer
+          format: int64
+          minimum: 0
+        drinkCount:
+          type: integer
+          format: int64
+          minimum: 0
+    HistoryEntry:
+      type: object
+      required:
+        - sourceType
+        - sourceId
+        - occurredAt
+        - localBucketStart
+        - title
+      properties:
+        sourceType:
+          type: string
+          enum:
+            - FOOD
+            - DRINK
+        sourceId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        localBucketStart:
+          type: string
+          format: date
+        title:
+          type: string
+          example: Monday Milk Tea
+        context:
+          type: string
+          nullable: true
+          example: Orchard Tea Bar
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        cuisineId:
+          type: string
+          format: uuid
+          nullable: true
+        placeId:
+          type: string
+          format: uuid
+          nullable: true
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+        repeatIntent:
+          type: boolean
+          nullable: true
     CreateGroupRequest:
       type: object
       required:
@@ -1392,6 +1681,304 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /drink-records:
+    post:
+      tags:
+        - Drink Records
+      summary: Create an owner-controlled drink record.
+      description: Owner is derived from the JWT. GROUP visibility requires active membership in the target active group.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDrinkRecordRequest'
+      responses:
+        '201':
+          description: Drink record created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrinkRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Drink Records
+      summary: List authorised drink history cards.
+      description: Returns owner records and authorised group records through one permission-scoped SQL predicate. Deleted records are excluded.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: placeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: visibility
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - PRIVATE
+              - GROUP
+        - name: groupId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: minRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 5
+        - name: maxRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 5
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Authorised drink history page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrinkRecordPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /drink-records/{id}:
+    get:
+      tags:
+        - Drink Records
+      summary: Read an authorised drink record detail.
+      description: Uses a permission-scoped query and returns non-disclosing 404 when inaccessible.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Drink record detail.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrinkRecordResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+        - Drink Records
+      summary: Update an owned drink record.
+      description: Requires If-Match with the current version. Non-owners receive non-disclosing 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '"0"'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDrinkRecordRequest'
+      responses:
+        '200':
+          description: Updated drink record.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: New optimistic-lock version.
+              schema:
+                type: string
+                example: '"1"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrinkRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - Drink Records
+      summary: Soft-delete an owned drink record.
+      description: Repeated owner delete is idempotent. Deleted rows are excluded from normal queries.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Drink record deleted or already deleted for this owner.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /history:
+    get:
+      tags:
+        - History
+      summary: Query combined timezone-aware food and drink history.
+      description: Uses [from, to) range semantics. Date-only boundaries are interpreted in the resolved IANA timezone; week buckets start on Monday. Ranges over 366 days are rejected.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+          example: "2026-07-26"
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+          example: "2026-07-28"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - DAY
+              - WEEK
+              - MONTH
+            default: DAY
+        - name: types
+          in: query
+          required: false
+          description: Comma-separated source types.
+          schema:
+            type: string
+            example: FOOD,DRINK
+        - name: timeZone
+          in: query
+          required: false
+          schema:
+            type: string
+            example: Asia/Singapore
+        - name: groupId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: cuisineId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: placeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Presentation-neutral combined history.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
