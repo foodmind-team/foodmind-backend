@@ -859,6 +859,194 @@ components:
             type: string
           example:
             - SOY
+    FoodRecordMoney:
+      type: object
+      nullable: true
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          example: 7.50
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: SGD
+    CreateFoodRecordRequest:
+      type: object
+      required:
+        - mealNameSnapshot
+        - occurredAt
+      properties:
+        mealId:
+          type: string
+          format: uuid
+          nullable: true
+          example: 20000000-0000-4000-8000-000000000001
+        mealNameSnapshot:
+          type: string
+          maxLength: 160
+          example: Hainanese Chicken Rice
+        placeId:
+          type: string
+          format: uuid
+          nullable: true
+          example: 21000000-0000-4000-8000-000000000001
+        placeNameSnapshot:
+          type: string
+          maxLength: 160
+          nullable: true
+          example: Orchard Garden Kitchen
+        cuisineId:
+          type: string
+          format: uuid
+          nullable: true
+          example: 10000000-0000-4000-8000-000000000001
+        occurredAt:
+          type: string
+          format: date-time
+          example: "2026-07-28T04:15:00Z"
+        price:
+          type: number
+          minimum: 0
+          nullable: true
+          example: 7.50
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          nullable: true
+          example: SGD
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+          example: 4.5
+        comment:
+          type: string
+          maxLength: 4000
+          nullable: true
+          example: Tender chicken and bright chilli.
+        wouldEatAgain:
+          type: boolean
+          nullable: true
+          example: true
+        visibility:
+          type: string
+          enum:
+            - PRIVATE
+            - GROUP
+          default: PRIVATE
+          example: PRIVATE
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Rejected until Branch 07 supplies active group permission.
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Must reference an owned READY media asset.
+    UpdateFoodRecordRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateFoodRecordRequest'
+      description: Partial update body. Null and omitted values are not used to clear existing fields in this branch.
+    FoodRecordResponse:
+      type: object
+      required:
+        - id
+        - mealNameSnapshot
+        - occurredAt
+        - visibility
+        - createdAt
+        - updatedAt
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        mealId:
+          type: string
+          format: uuid
+          nullable: true
+        mealNameSnapshot:
+          type: string
+          example: Hainanese Chicken Rice
+        placeId:
+          type: string
+          format: uuid
+          nullable: true
+        placeNameSnapshot:
+          type: string
+          nullable: true
+          example: Orchard Garden Kitchen
+        cuisineId:
+          type: string
+          format: uuid
+          nullable: true
+        cuisineCode:
+          type: string
+          nullable: true
+          example: SINGAPOREAN
+        cuisineName:
+          type: string
+          nullable: true
+          example: Singaporean
+        occurredAt:
+          type: string
+          format: date-time
+        price:
+          $ref: '#/components/schemas/FoodRecordMoney'
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+          description: Present on detail responses; list cards return null.
+        wouldEatAgain:
+          type: boolean
+          nullable: true
+        visibility:
+          type: string
+          enum:
+            - PRIVATE
+            - GROUP
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present on detail responses; list cards return null.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          example: 0
+    FoodRecordPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageResponse'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/FoodRecordResponse'
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -1287,5 +1475,232 @@ paths:
                 $ref: '#/components/schemas/UserPreferencesResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /food-records:
+    post:
+      tags:
+        - Food Records
+      summary: Create an owner-controlled private food record.
+      description: Owner is derived from the JWT. GROUP visibility is rejected until Branch 07 supplies live group-membership permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFoodRecordRequest'
+      responses:
+        '201':
+          description: Food record created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Food Records
+      summary: List authorised food history cards.
+      description: Returns owner records and authorised group records through one permission-scoped SQL predicate. Deleted records are excluded.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: cuisineId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: mealId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: placeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: visibility
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - PRIVATE
+              - GROUP
+        - name: groupId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: minRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 5
+        - name: maxRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 5
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Authorised food history page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodRecordPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /food-records/{id}:
+    get:
+      tags:
+        - Food Records
+      summary: Read an authorised food record detail.
+      description: Uses a permission-scoped query and returns non-disclosing 404 when inaccessible.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Food record detail.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodRecordResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+        - Food Records
+      summary: Update an owned food record.
+      description: Requires If-Match with the current version. Non-owners receive non-disclosing 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '"0"'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFoodRecordRequest'
+      responses:
+        '200':
+          description: Updated food record.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: New optimistic-lock version.
+              schema:
+                type: string
+                example: '"1"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - Food Records
+      summary: Soft-delete an owned food record.
+      description: Repeated owner delete is idempotent. Deleted rows are excluded from normal queries.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Food record deleted or already deleted for this owner.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
         '401':
           $ref: '#/components/responses/Unauthorized'
