@@ -16,13 +16,13 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18.4
         env:
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         options: >-
-          --health-cmd "pg_isready -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }}"
+          --health-cmd "pg_isready -U foodmind -d foodmind_test"
           --health-interval 10s
           --health-timeout 10s
           --health-retries 20
@@ -61,7 +61,7 @@ jobs:
           echo "--- Docker images ---"
           docker images
           echo "--- PostgreSQL logs (by ancestor + name) ---"
-          docker ps --filter "ancestor=postgres:15" -q | xargs -r docker logs --tail 500 || true
+          docker ps --filter "ancestor=postgres:18.4" -q | xargs -r docker logs --tail 500 || true
           docker ps --filter "name=postgres" -q | xargs -r docker logs --tail 500 || true
           exit 1
 
