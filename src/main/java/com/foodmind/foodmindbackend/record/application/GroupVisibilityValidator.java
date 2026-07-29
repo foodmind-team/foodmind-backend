@@ -29,12 +29,21 @@ public class GroupVisibilityValidator {
     }
 
     public void validateUpdate(UUID actorUserId, FoodRecord current, FoodRecordVisibility visibility, UUID groupId) {
+        validateUpdate(actorUserId, current.visibility(), current.groupId(), visibility, groupId);
+    }
+
+    public void validateUpdate(
+            UUID actorUserId,
+            FoodRecordVisibility currentVisibility,
+            UUID currentGroupId,
+            FoodRecordVisibility visibility,
+            UUID groupId) {
         if (visibility != FoodRecordVisibility.GROUP) {
             return;
         }
-        boolean retainingExistingGroup = current.visibility() == FoodRecordVisibility.GROUP
-                && current.groupId() != null
-                && current.groupId().equals(groupId);
+        boolean retainingExistingGroup = currentVisibility == FoodRecordVisibility.GROUP
+                && currentGroupId != null
+                && currentGroupId.equals(groupId);
         if (!retainingExistingGroup) {
             groupMembershipPolicy.requireActiveMember(actorUserId, groupId);
         }

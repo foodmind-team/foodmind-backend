@@ -3561,7 +3561,9 @@
                   "pm.test(\"drink record ID is returned\", function () {",
                   "    pm.expect(capturedValue, \"expected response identifier\").to.be.a(\"string\").and.not.empty;",
                   "});",
-                  "if (capturedValue) pm.environment.set(\"drinkRecordId\", capturedValue);"
+                  "if (capturedValue) pm.environment.set(\"drinkRecordId\", capturedValue);",
+                  "const etag = pm.response.headers.get(\"ETag\");",
+                  "if (etag) pm.environment.set(\"drinkRecordEtag\", etag);"
                 ]
               }
             }
@@ -3671,6 +3673,11 @@
               {
                 "key": "Accept",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{drinkRecordEtag}}",
                 "type": "text"
               },
               {
