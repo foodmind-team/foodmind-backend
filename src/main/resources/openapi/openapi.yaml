@@ -512,6 +512,353 @@ components:
               type: integer
               format: int64
               example: 1
+    CatalogueReferenceItem:
+      type: object
+      required:
+        - id
+        - code
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 10000000-0000-4000-8000-000000000001
+        code:
+          type: string
+          example: SINGAPOREAN
+        name:
+          type: string
+          example: Singaporean
+    CatalogueReferenceDataResponse:
+      type: object
+      required:
+        - cuisines
+        - dietaryTags
+        - allergens
+        - mealTypes
+        - placeTypes
+      properties:
+        cuisines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogueReferenceItem'
+        dietaryTags:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogueReferenceItem'
+        allergens:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogueReferenceItem'
+        mealTypes:
+          type: array
+          items:
+            type: string
+          example:
+            - BREAKFAST
+            - LUNCH
+            - DINNER
+        placeTypes:
+          type: array
+          items:
+            type: string
+          example:
+            - CAFE
+            - CASUAL_DINING
+            - HAWKER_STALL
+    CatalogueMoney:
+      type: object
+      nullable: true
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          example: 7.50
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: SGD
+    CataloguePlaceSummary:
+      type: object
+      nullable: true
+      required:
+        - id
+        - name
+        - area
+        - placeType
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 21000000-0000-4000-8000-000000000001
+        name:
+          type: string
+          example: Orchard Garden Kitchen
+        area:
+          type: string
+          example: Orchard
+        placeType:
+          type: string
+          example: CASUAL_DINING
+    CatalogueMealOffering:
+      type: object
+      required:
+        - id
+        - displayName
+        - price
+        - place
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 22000000-0000-4000-8000-000000000001
+        displayName:
+          type: string
+          example: Garden Chicken Rice
+        price:
+          $ref: '#/components/schemas/CatalogueMoney'
+        spiceLevel:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 5
+          example: 0
+        availabilityNote:
+          type: string
+          nullable: true
+          example: Synthetic demo availability; verify before travel.
+        place:
+          $ref: '#/components/schemas/CataloguePlaceSummary'
+    CatalogueMealResponse:
+      type: object
+      required:
+        - id
+        - name
+        - cuisine
+        - mealType
+        - dietaryTagCodes
+        - allergenCodes
+        - offerings
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 20000000-0000-4000-8000-000000000001
+        name:
+          type: string
+          example: Hainanese Chicken Rice
+        description:
+          type: string
+          nullable: true
+          example: Poached chicken with fragrant rice, cucumber, and a light soy dressing.
+        cuisine:
+          $ref: '#/components/schemas/CatalogueReferenceItem'
+        mealType:
+          type: string
+          example: LUNCH
+        defaultSpiceLevel:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 5
+          example: 0
+        dietaryTagCodes:
+          type: array
+          items:
+            type: string
+          example: []
+        allergenCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - GLUTEN
+            - SOY
+        offerings:
+          type: array
+          description: Active place-specific offerings; this is the eat-out recommendation candidate context.
+          items:
+            $ref: '#/components/schemas/CatalogueMealOffering'
+    CatalogueCoordinates:
+      type: object
+      nullable: true
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          example: 1.304800
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          example: 103.831800
+    CataloguePlaceObservation:
+      type: object
+      required:
+        - id
+        - observationType
+        - score
+        - sourceKind
+        - observedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 24000000-0000-4000-8000-000000000001
+        observationType:
+          type: string
+          example: CLEANLINESS
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Decision-support evidence score, not an inspection or safety certification.
+          example: 0.86
+        note:
+          type: string
+          nullable: true
+          example: Synthetic demo curation observation; not an inspection or safety certification.
+        sourceKind:
+          type: string
+          example: CURATED_DEMO
+        observedAt:
+          type: string
+          format: date-time
+          example: "2026-07-21T04:00:00Z"
+    CataloguePlaceOffering:
+      type: object
+      required:
+        - id
+        - displayName
+        - price
+        - mealId
+        - mealName
+        - mealType
+        - cuisineCode
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 22000000-0000-4000-8000-000000000001
+        displayName:
+          type: string
+          example: Garden Chicken Rice
+        price:
+          $ref: '#/components/schemas/CatalogueMoney'
+        spiceLevel:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 5
+          example: 0
+        availabilityNote:
+          type: string
+          nullable: true
+          example: Synthetic demo availability; verify before travel.
+        mealId:
+          type: string
+          format: uuid
+          example: 20000000-0000-4000-8000-000000000001
+        mealName:
+          type: string
+          example: Hainanese Chicken Rice
+        mealType:
+          type: string
+          example: LUNCH
+        cuisineCode:
+          type: string
+          example: SINGAPOREAN
+    CataloguePlaceResponse:
+      type: object
+      required:
+        - id
+        - name
+        - placeType
+        - area
+        - observations
+        - offerings
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 21000000-0000-4000-8000-000000000001
+        name:
+          type: string
+          example: Orchard Garden Kitchen
+        placeType:
+          type: string
+          example: CASUAL_DINING
+        area:
+          type: string
+          example: Orchard
+        addressText:
+          type: string
+          nullable: true
+          example: FoodMind synthetic demo listing, Orchard area
+        coordinates:
+          $ref: '#/components/schemas/CatalogueCoordinates'
+        priceBand:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 4
+          example: 2
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CataloguePlaceObservation'
+        offerings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CataloguePlaceOffering'
+    CatalogueProductResponse:
+      type: object
+      required:
+        - id
+        - name
+        - dietaryTagCodes
+        - allergenCodes
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 23000000-0000-4000-8000-000000000001
+        name:
+          type: string
+          example: Unsweetened Soy Drink
+        brand:
+          type: string
+          nullable: true
+          example: FoodMind Demo
+        description:
+          type: string
+          nullable: true
+          example: Shelf-stable unsweetened soy drink used as controlled demo catalogue data.
+        price:
+          $ref: '#/components/schemas/CatalogueMoney'
+        place:
+          $ref: '#/components/schemas/CataloguePlaceSummary'
+        dietaryTagCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - VEGAN
+            - VEGETARIAN
+        allergenCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - SOY
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -650,6 +997,118 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /catalogue/reference-data:
+    get:
+      tags:
+        - Catalogue
+      summary: Read controlled catalogue reference choices.
+      description: Returns stable cuisine, dietary-tag, allergen, meal-type, and place-type choices from the controlled catalogue.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Controlled catalogue reference choices.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueReferenceDataResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /catalogue/meals/{id}:
+    get:
+      tags:
+        - Catalogue
+      summary: Read an active controlled meal.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 20000000-0000-4000-8000-000000000001
+      responses:
+        '200':
+          description: Active meal detail with active place-specific offerings.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueMealResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /catalogue/places/{id}:
+    get:
+      tags:
+        - Catalogue
+      summary: Read an active controlled place.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 21000000-0000-4000-8000-000000000001
+      responses:
+        '200':
+          description: Active place detail with decision-support observations and active offerings.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CataloguePlaceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /catalogue/products/{id}:
+    get:
+      tags:
+        - Catalogue
+      summary: Read an active controlled food product.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 23000000-0000-4000-8000-000000000001
+      responses:
+        '200':
+          description: Active product detail with controlled dietary and allergen classifications.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '403':
           $ref: '#/components/responses/Forbidden'
   /auth/refresh:
