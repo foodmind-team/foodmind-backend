@@ -1,0 +1,171 @@
+{
+  "sessionId": "90000000-0000-4000-8000-000000000001",
+  "traceId": "fixture-trace-recommendation-fallback-v1",
+  "status": "FALLBACK_SUCCEEDED",
+  "modelStatus": "NOT_REQUESTED",
+  "modelVersion": null,
+  "fallbackStatus": "SUCCEEDED",
+  "fallbackVersion": "fallback-v1",
+  "createdAt": "2030-07-30T12:00:00Z",
+  "completedAt": "2030-07-30T12:00:01Z",
+  "items": [
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000101",
+      "placeMealId": "22000000-0000-4000-8000-000000000007",
+      "mealId": "20000000-0000-4000-8000-000000000003",
+      "mealName": "Chana Masala with Rice",
+      "placeId": "21000000-0000-4000-8000-000000000003",
+      "placeName": "Serangoon Vegetarian Table",
+      "area": "Serangoon",
+      "price": {
+        "amount": 9.50,
+        "currency": "SGD"
+      },
+      "recommendationType": "PERSONAL",
+      "rank": 1,
+      "reasonCodes": [
+        "CUISINE_MATCH",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "CUISINE_MATCH",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Chana Masala with Rice at Serangoon Vegetarian Table matches cuisines you have explicitly liked."
+    },
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000102",
+      "placeMealId": "22000000-0000-4000-8000-000000000008",
+      "mealId": "20000000-0000-4000-8000-000000000002",
+      "mealName": "Wok-Seared Vegetable Fried Rice",
+      "placeId": "21000000-0000-4000-8000-000000000003",
+      "placeName": "Serangoon Vegetarian Table",
+      "area": "Serangoon",
+      "price": {
+        "amount": 8.90,
+        "currency": "SGD"
+      },
+      "recommendationType": "EXPLORATORY",
+      "rank": 2,
+      "reasonCodes": [
+        "SIMILAR_USERS_LIKED",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "SIMILAR_USERS_LIKED",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Wok-Seared Vegetable Fried Rice at Serangoon Vegetarian Table adds a safe non-recent option within the current constraints."
+    },
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000103",
+      "placeMealId": "22000000-0000-4000-8000-000000000003",
+      "mealId": "20000000-0000-4000-8000-000000000007",
+      "mealName": "Grilled Salmon Donburi",
+      "placeId": "21000000-0000-4000-8000-000000000001",
+      "placeName": "Orchard Garden Kitchen",
+      "area": "Orchard",
+      "price": {
+        "amount": 15.90,
+        "currency": "SGD"
+      },
+      "recommendationType": "GROUP_INSPIRED",
+      "rank": 3,
+      "reasonCodes": [
+        "TRUSTED_GROUP_RATING",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "TRUSTED_GROUP_RATING",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Grilled Salmon Donburi at Orchard Garden Kitchen is backed by recent active-group meal evidence."
+    }
+  ],
+  "candidates": [
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000101",
+      "placeMealId": "22000000-0000-4000-8000-000000000007",
+      "mealId": "20000000-0000-4000-8000-000000000003",
+      "mealName": "Chana Masala with Rice",
+      "placeId": "21000000-0000-4000-8000-000000000003",
+      "placeName": "Serangoon Vegetarian Table",
+      "area": "Serangoon",
+      "price": {
+        "amount": 9.50,
+        "currency": "SGD"
+      },
+      "recommendationType": "PERSONAL",
+      "rank": 1,
+      "reasonCodes": [
+        "CUISINE_MATCH",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "CUISINE_MATCH",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Chana Masala with Rice at Serangoon Vegetarian Table matches cuisines you have explicitly liked."
+    },
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000102",
+      "placeMealId": "22000000-0000-4000-8000-000000000008",
+      "mealId": "20000000-0000-4000-8000-000000000002",
+      "mealName": "Wok-Seared Vegetable Fried Rice",
+      "placeId": "21000000-0000-4000-8000-000000000003",
+      "placeName": "Serangoon Vegetarian Table",
+      "area": "Serangoon",
+      "price": {
+        "amount": 8.90,
+        "currency": "SGD"
+      },
+      "recommendationType": "EXPLORATORY",
+      "rank": 2,
+      "reasonCodes": [
+        "SIMILAR_USERS_LIKED",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "SIMILAR_USERS_LIKED",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Wok-Seared Vegetable Fried Rice at Serangoon Vegetarian Table adds a safe non-recent option within the current constraints."
+    },
+    {
+      "candidateId": "90000000-0000-4000-8000-000000000103",
+      "placeMealId": "22000000-0000-4000-8000-000000000003",
+      "mealId": "20000000-0000-4000-8000-000000000007",
+      "mealName": "Grilled Salmon Donburi",
+      "placeId": "21000000-0000-4000-8000-000000000001",
+      "placeName": "Orchard Garden Kitchen",
+      "area": "Orchard",
+      "price": {
+        "amount": 15.90,
+        "currency": "SGD"
+      },
+      "recommendationType": "GROUP_INSPIRED",
+      "rank": 3,
+      "reasonCodes": [
+        "TRUSTED_GROUP_RATING",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "reasons": [
+        "TRUSTED_GROUP_RATING",
+        "WITHIN_BUDGET",
+        "SPICE_MATCH"
+      ],
+      "explanation": "Grilled Salmon Donburi at Orchard Garden Kitchen is backed by recent active-group meal evidence."
+    }
+  ]
+}
