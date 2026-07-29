@@ -28,10 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreateFoodRecord {
 
     private final FoodRecordQuery foodRecordQuery;
+    private final GroupVisibilityValidator groupVisibilityValidator;
     private final Clock clock;
 
-    public CreateFoodRecord(FoodRecordQuery foodRecordQuery, Clock clock) {
+    public CreateFoodRecord(FoodRecordQuery foodRecordQuery, GroupVisibilityValidator groupVisibilityValidator, Clock clock) {
         this.foodRecordQuery = foodRecordQuery;
+        this.groupVisibilityValidator = groupVisibilityValidator;
         this.clock = clock;
     }
 
@@ -49,6 +51,7 @@ public class CreateFoodRecord {
                 visibility,
                 command.groupId(),
                 clock);
+        groupVisibilityValidator.validateCreate(ownerUserId, visibility, command.groupId());
         validateReferences(ownerUserId, command);
         FoodRecord record = new FoodRecord(
                 UUID.randomUUID(),

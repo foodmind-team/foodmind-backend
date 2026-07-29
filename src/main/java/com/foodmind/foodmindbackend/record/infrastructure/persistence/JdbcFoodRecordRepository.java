@@ -39,9 +39,11 @@ public class JdbcFoodRecordRepository implements FoodRecordQuery {
                     AND EXISTS (
                         SELECT 1
                         FROM group_membership gm
+                        JOIN trusted_group tg ON tg.id = gm.group_id
                         WHERE gm.group_id = fr.group_id
                           AND gm.user_id = :actorUserId
                           AND gm.status = 'ACTIVE'
+                          AND tg.status = 'ACTIVE'
                     )
                 )
             )

@@ -28,10 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class UpdateFoodRecord {
 
     private final FoodRecordQuery foodRecordQuery;
+    private final GroupVisibilityValidator groupVisibilityValidator;
     private final Clock clock;
 
-    public UpdateFoodRecord(FoodRecordQuery foodRecordQuery, Clock clock) {
+    public UpdateFoodRecord(FoodRecordQuery foodRecordQuery, GroupVisibilityValidator groupVisibilityValidator, Clock clock) {
         this.foodRecordQuery = foodRecordQuery;
+        this.groupVisibilityValidator = groupVisibilityValidator;
         this.clock = clock;
     }
 
@@ -42,7 +44,7 @@ public class UpdateFoodRecord {
         FoodRecordValidation.validateExpectedVersion(current.version(), expectedVersion);
 
         FoodRecordVisibility visibility = command.visibility() == null ? current.visibility() : command.visibility();
-        UUID groupId = command.groupId() == null ? current.groupId() : command.groupId();
+        UUID groupId = visibility == FoodRecordVisibility.PRIVATE ? null : command.groupId() == null ? current.groupId() : command.groupId();
         UUID mediaAssetId = command.mediaAssetId() == null ? current.mediaAssetId() : command.mediaAssetId();
         BigDecimal price = command.price() == null ? current.price() : command.price();
         String currency = command.currency() == null ? current.currency() : command.currency();
@@ -79,6 +81,7 @@ public class UpdateFoodRecord {
                 updated.visibility(),
                 updated.groupId(),
                 clock);
+        groupVisibilityValidator.validateUpdate(ownerUserId, current, updated.visibility(), updated.groupId());
         validateReferences(ownerUserId, updated, current);
         return foodRecordQuery.update(updated);
     }
