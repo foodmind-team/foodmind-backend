@@ -23,8 +23,6 @@ jobs:
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
           --health-interval 10s
@@ -44,18 +42,16 @@ jobs:
       - name: Fix mvnw executable permission
         run: chmod +x mvnw
 
-      - name: Install PostgreSQL client & netcat
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client netcat-openbsd
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Wait for PostgreSQL to be fully ready
         env:
           PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
         run: |
           for i in {1..120}; do
-            if nc -z 127.0.0.1 5432 2>/dev/null; then
-              pg_isready -h 127.0.0.1 -p 5432 -U $POSTGRES_USER -d $POSTGRES_DB \
-                && echo "PostgreSQL is ready after $i seconds" \
-                && exit 0
+            if pg_isready -h postgres -p 5432 -U $POSTGRES_USER -d $POSTGRES_DB >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after $i seconds" && exit 0
             fi
             echo "⏳ Waiting for PostgreSQL... ($i/120)"
             sleep 1
@@ -70,7 +66,7 @@ jobs:
 
       - name: Run all tests
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/${{ env.POSTGRES_DB }}
+          SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${{ env.POSTGRES_DB }}
           SPRING_DATASOURCE_USERNAME: ${{ env.POSTGRES_USER }}
           SPRING_DATASOURCE_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         run: ./mvnw clean test
