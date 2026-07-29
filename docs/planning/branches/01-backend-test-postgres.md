@@ -31,8 +31,8 @@ pom.xml
 compose.yaml
 src/main/resources/application.properties
 src/main/resources/application-local.properties
-src/main/resources/application-staging.properties
-src/main/resources/application-production-demo.properties
+src/main/resources/application-docker.properties
+src/main/resources/application-prod.properties
 src/main/resources/db/migration/V1__platform_extensions.sql
 src/main/resources/db/migration/V2__identity_and_auth.sql
 src/main/resources/db/migration/V3__preferences.sql
