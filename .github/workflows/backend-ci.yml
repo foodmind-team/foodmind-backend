@@ -57,11 +57,13 @@ jobs:
             sleep 1
           done
 
-          echo "PostgreSQL failed to start within 120 seconds"
+          echo "PostgreSQL failed to start within 180 seconds"
           echo "--- Docker containers ---"
           docker ps -a
-          echo "--- PostgreSQL logs ---"
-          docker ps --filter "ancestor=postgres:15-alpine" -q | xargs -r docker logs --tail 200
+          echo "--- PostgreSQL container logs (last 500 lines) ---"
+          docker ps --filter "ancestor=postgres:15" -q | xargs -r docker logs --tail 500 || true
+          echo "--- System journal for docker (if available) ---"
+          journalctl -u docker --no-pager --since "5 minutes ago" || true
           exit 1
 
       - name: Run all tests
