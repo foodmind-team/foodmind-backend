@@ -158,6 +158,179 @@ components:
         hasNext:
           type: boolean
           example: false
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - displayName
+        - password
+        - clientType
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          example: primary@example.test
+        displayName:
+          type: string
+          maxLength: 100
+          example: Primary User
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          example: correct horse battery
+        timeZone:
+          type: string
+          maxLength: 64
+          example: Asia/Singapore
+        clientType:
+          type: string
+          enum:
+            - WEB
+            - ANDROID
+          example: WEB
+        deviceLabel:
+          type: string
+          maxLength: 100
+          example: Pixel 9
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+        - clientType
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          example: primary@example.test
+        password:
+          type: string
+          format: password
+          maxLength: 128
+          example: correct horse battery
+        clientType:
+          type: string
+          enum:
+            - WEB
+            - ANDROID
+          example: WEB
+        deviceLabel:
+          type: string
+          maxLength: 100
+          example: Chrome on Windows
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 4096
+          description: Opaque refresh token for Android/Postman clients. Web clients may use the Secure HttpOnly cookie instead.
+          example: redacted-refresh-token
+        clientType:
+          type: string
+          enum:
+            - WEB
+            - ANDROID
+          example: ANDROID
+    AuthTokenResponse:
+      type: object
+      required:
+        - userId
+        - accessToken
+        - tokenType
+        - expiresIn
+        - expiresAt
+        - refreshToken
+        - refreshTokenExpiresAt
+        - csrfToken
+      properties:
+        userId:
+          type: string
+          format: uuid
+          example: 018fd1e4-5e5d-7a30-90d4-8d0d3f7f5d9c
+        accessToken:
+          type: string
+          description: Short-lived signed JWT access token.
+          example: redacted-access-jwt
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          example: 900
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-07-29T12:30:00Z"
+        refreshToken:
+          type: string
+          description: Opaque refresh token returned once; only a SHA-256 hash is stored by the backend.
+          example: redacted-refresh-token
+        refreshTokenExpiresAt:
+          type: string
+          format: date-time
+          example: "2026-08-28T12:15:00Z"
+        csrfToken:
+          type: string
+          description: CSRF companion value for cookie-based web refresh/logout.
+          example: redacted-csrf-token
+    CurrentUserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - status
+        - timeZone
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 018fd1e4-5e5d-7a30-90d4-8d0d3f7f5d9c
+        email:
+          type: string
+          format: email
+          example: primary@example.test
+        displayName:
+          type: string
+          example: Primary User
+        role:
+          type: string
+          enum:
+            - USER
+            - ADMIN
+          example: USER
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - DEACTIVATED
+          example: ACTIVE
+        timeZone:
+          type: string
+          example: Asia/Singapore
+        version:
+          type: integer
+          format: int64
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-07-29T12:15:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-07-29T12:15:00Z"
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -231,4 +404,171 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
-paths: {}
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a user and issue tokens.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered and session created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Set-Cookie:
+              description: Secure HttpOnly refresh cookie and CSRF companion cookie for web clients.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate with email and password.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Credentials accepted and session created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Set-Cookie:
+              description: Secure HttpOnly refresh cookie and CSRF companion cookie for web clients.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Rotate a refresh session and issue a new access token.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Refresh token rotated.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Set-Cookie:
+              description: Replacement refresh and CSRF cookies for web clients.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Revoke the supplied refresh session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Refresh session revoked and auth cookies cleared.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Set-Cookie:
+              description: Expired refresh and CSRF cookies.
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout-all:
+    post:
+      tags:
+        - Authentication
+      summary: Revoke every active refresh session for the authenticated user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: Active refresh sessions revoked and auth cookies cleared.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Set-Cookie:
+              description: Expired refresh and CSRF cookies.
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users/me:
+    get:
+      tags:
+        - Users
+      summary: Read the authenticated user's profile.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current authenticated user.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
