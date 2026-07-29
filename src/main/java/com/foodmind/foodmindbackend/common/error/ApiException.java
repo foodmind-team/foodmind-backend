@@ -1,5 +1,7 @@
 package com.foodmind.foodmindbackend.common.error;
 
+import com.foodmind.foodmindbackend.common.api.ApiFieldError;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 public class ApiException extends RuntimeException {
 
     private final ErrorCode errorCode;
+    private final List<ApiFieldError> fieldErrors;
     private final HttpStatus status;
     private final String safeMessage;
 
@@ -24,8 +27,17 @@ public class ApiException extends RuntimeException {
     }
 
     public ApiException(ErrorCode errorCode, HttpStatus status, String safeMessage) {
+        this(errorCode, status, safeMessage, List.of());
+    }
+
+    public ApiException(ErrorCode errorCode, String safeMessage, List<ApiFieldError> fieldErrors) {
+        this(errorCode, errorCode.status(), safeMessage, fieldErrors);
+    }
+
+    public ApiException(ErrorCode errorCode, HttpStatus status, String safeMessage, List<ApiFieldError> fieldErrors) {
         super(safeMessage);
         this.errorCode = errorCode;
+        this.fieldErrors = List.copyOf(fieldErrors);
         this.status = status;
         this.safeMessage = safeMessage;
     }
@@ -36,6 +48,10 @@ public class ApiException extends RuntimeException {
 
     public HttpStatus status() {
         return status;
+    }
+
+    public List<ApiFieldError> fieldErrors() {
+        return fieldErrors;
     }
 
     public String safeMessage() {

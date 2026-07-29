@@ -1510,7 +1510,7 @@
             "description": "Replaces scalar settings and normalized reference joins atomically.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"budgetMin\": 5,\n  \"budgetMax\": 25,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\",\n    \"INDIAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"JAPANESE\"\n  ],\n  \"requiredDietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
+              "raw": "{\n  \"budgetMin\": 5,\n  \"budgetMax\": 25,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\",\n    \"INDIAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"JAPANESE\"\n  ],\n  \"dietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1576,7 +1576,7 @@
                   "const responseJson = pm.response.json();",
                   "const responseData = responseJson && responseJson.data !== undefined ? responseJson.data : responseJson;",
                   "pm.test(\"Saved hard constraints are present\", function () {",
-                  "    const dietary = responseData.requiredDietaryTagCodes ?? responseData.dietaryTags ?? [];",
+                  "    const dietary = responseData.dietaryTagCodes ?? responseData.hardConstraints?.requiredDietaryTagCodes ?? [];",
                   "    const allergens = responseData.allergens ?? [];",
                   "    pm.expect(dietary.map(String)).to.include(\"VEGETARIAN\");",
                   "    pm.expect(allergens.length).to.be.greaterThan(0);",
@@ -1616,7 +1616,7 @@
             "description": "Budget minimum greater than maximum is a bounded validation error.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"budgetMin\": 30,\n  \"budgetMax\": 10,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\",\n    \"INDIAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"JAPANESE\"\n  ],\n  \"requiredDietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
+              "raw": "{\n  \"budgetMin\": 30,\n  \"budgetMax\": 10,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\",\n    \"INDIAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"JAPANESE\"\n  ],\n  \"dietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1669,7 +1669,7 @@
             "description": "The same cuisine cannot be both liked and disliked.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"budgetMin\": 5,\n  \"budgetMax\": 25,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"SINGAPOREAN\"\n  ],\n  \"requiredDietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
+              "raw": "{\n  \"budgetMin\": 5,\n  \"budgetMax\": 25,\n  \"currency\": \"SGD\",\n  \"spiceTolerance\": 3,\n  \"preferredArea\": \"Tiong Bahru\",\n  \"preferredLatitude\": 1.284,\n  \"preferredLongitude\": 103.832,\n  \"maxDistanceKm\": 8,\n  \"cleanlinessPriority\": 4,\n  \"minimumCleanlinessEvidenceScore\": 0.7,\n  \"foodGoal\": \"BALANCED\",\n  \"drinkSweetnessPreference\": \"LOW\",\n  \"drinkIcePreference\": \"LESS\",\n  \"likedCuisineCodes\": [\n    \"SINGAPOREAN\"\n  ],\n  \"dislikedCuisineCodes\": [\n    \"SINGAPOREAN\"\n  ],\n  \"dietaryTagCodes\": [\n    \"VEGETARIAN\"\n  ],\n  \"allergens\": [\n    {\n      \"code\": \"PEANUT\",\n      \"severity\": \"SEVERE\"\n    }\n  ],\n  \"preferredMealTypes\": [\n    \"LUNCH\",\n    \"DINNER\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

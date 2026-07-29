@@ -331,6 +331,187 @@ components:
           type: string
           format: date-time
           example: "2026-07-29T12:15:00Z"
+    UpdateCurrentUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 100
+          example: Primary User Updated
+        timeZone:
+          type: string
+          maxLength: 64
+          description: IANA timezone identifier.
+          example: Asia/Singapore
+    AllergenPreferenceRequest:
+      type: object
+      required:
+        - code
+        - severity
+      properties:
+        code:
+          type: string
+          maxLength: 40
+          example: PEANUT
+        severity:
+          type: string
+          maxLength: 20
+          example: SEVERE
+    AllergenPreference:
+      type: object
+      required:
+        - code
+        - severity
+      properties:
+        code:
+          type: string
+          example: PEANUT
+        severity:
+          type: string
+          example: SEVERE
+    ReplacePreferencesRequest:
+      type: object
+      properties:
+        budgetMin:
+          type: number
+          minimum: 0
+          example: 5
+        budgetMax:
+          type: number
+          minimum: 0
+          example: 25
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: SGD
+        spiceTolerance:
+          type: integer
+          minimum: 0
+          maximum: 5
+          example: 3
+        preferredArea:
+          type: string
+          maxLength: 120
+          example: Tiong Bahru
+        preferredLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          example: 1.284
+        preferredLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          example: 103.832
+        maxDistanceKm:
+          type: number
+          exclusiveMinimum: 0
+          example: 8
+        cleanlinessPriority:
+          type: integer
+          minimum: 0
+          maximum: 5
+          example: 4
+        minimumCleanlinessEvidenceScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Decision-support evidence threshold, not a safety certification.
+          example: 0.7
+        foodGoal:
+          type: string
+          maxLength: 40
+          example: BALANCED
+        drinkSweetnessPreference:
+          type: string
+          maxLength: 20
+          example: LOW
+        drinkIcePreference:
+          type: string
+          maxLength: 20
+          example: LESS
+        likedCuisineCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - SINGAPOREAN
+            - INDIAN
+        dislikedCuisineCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - JAPANESE
+        dietaryTagCodes:
+          type: array
+          description: Required dietary tags; these are hard constraints.
+          items:
+            type: string
+          example:
+            - VEGETARIAN
+        allergens:
+          type: array
+          description: User-declared allergens; these are hard constraints.
+          items:
+            $ref: '#/components/schemas/AllergenPreferenceRequest'
+        preferredMealTypes:
+          type: array
+          items:
+            type: string
+          example:
+            - LUNCH
+            - DINNER
+    HardConstraintSummary:
+      type: object
+      required:
+        - requiredDietaryTagCodes
+        - allergens
+      properties:
+        requiredDietaryTagCodes:
+          type: array
+          items:
+            type: string
+        allergens:
+          type: array
+          items:
+            $ref: '#/components/schemas/AllergenPreference'
+    UserPreferencesResponse:
+      allOf:
+        - $ref: '#/components/schemas/ReplacePreferencesRequest'
+        - type: object
+          required:
+            - currency
+            - cleanlinessPriority
+            - likedCuisineCodes
+            - dislikedCuisineCodes
+            - dietaryTagCodes
+            - allergens
+            - preferredMealTypes
+            - hardConstraints
+            - version
+          properties:
+            allergens:
+              type: array
+              items:
+                $ref: '#/components/schemas/AllergenPreference'
+            hardConstraints:
+              $ref: '#/components/schemas/HardConstraintSummary'
+            createdAt:
+              type: string
+              format: date-time
+              nullable: true
+              example: "2026-07-29T12:15:00Z"
+            updatedAt:
+              type: string
+              format: date-time
+              nullable: true
+              example: "2026-07-29T12:15:00Z"
+            version:
+              type: integer
+              format: int64
+              example: 1
   responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -570,5 +751,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags:
+        - Users
+      summary: Update the authenticated user's mutable profile fields.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCurrentUserRequest'
+      responses:
+        '200':
+          description: Updated authenticated user.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users/me/preferences:
+    get:
+      tags:
+        - User Preferences
+      summary: Read the authenticated user's preference aggregate.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current authenticated user's preferences.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreferencesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+        - User Preferences
+      summary: Replace the authenticated user's complete preference aggregate.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplacePreferencesRequest'
+      responses:
+        '200':
+          description: Replaced preference aggregate.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreferencesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
