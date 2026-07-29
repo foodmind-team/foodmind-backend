@@ -6,21 +6,62 @@ on:
     branches:
       - master
 
+env:
+  SPRING_PROFILES_ACTIVE: test
+  POSTGRES_DB: foodmind_test
+  POSTGRES_USER: foodmind
+  POSTGRES_PASSWORD: foodmind_test_password
+
 jobs:
   test:
-    env:
-      SPRING_PROFILES_ACTIVE: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Run Maven tests
+      - name: Fix mvnw executable permission
+        run: chmod +x mvnw
+
+      - name: Install PostgreSQL client for health check
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL to be fully ready
+        env:
+          PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        run: |
+          for i in {1..60}; do
+            pg_isready -h localhost -p 5432 -U $POSTGRES_USER -d $POSTGRES_DB && echo "✅ PostgreSQL is ready" && exit 0
+            echo "Waiting for PostgreSQL... ($i/60)"
+            sleep 1
+          done
+          echo "PostgreSQL failed to start within 60s"
+          exit 1
+
+      - name: Run all tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/${{ env.POSTGRES_DB }}
+          SPRING_DATASOURCE_USERNAME: ${{ env.POSTGRES_USER }}
+          SPRING_DATASOURCE_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         run: ./mvnw clean test
