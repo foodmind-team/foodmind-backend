@@ -2343,6 +2343,233 @@ components:
           nullable: true
         hasNext:
           type: boolean
+    CreateChatSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+          maxLength: 160
+    PostChatMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 12000
+        referenceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 20
+        route:
+          type: string
+          nullable: true
+          enum:
+            - SEARCH
+            - SUMMARY
+            - COMPARE
+            - NAVIGATION
+            - OUT_OF_SCOPE
+    ShareChatReferenceRequest:
+      type: object
+      required:
+        - sourceType
+        - sourceId
+      properties:
+        sourceType:
+          type: string
+          enum:
+            - FOOD_RECORD
+            - FOOD_PRODUCT
+            - PLACE
+        sourceId:
+          type: string
+          format: uuid
+    ChatSessionResponse:
+      type: object
+      required:
+        - id
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - ARCHIVED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChatReferenceResponse:
+      type: object
+      required:
+        - id
+        - origin
+        - sourceType
+        - sourceId
+        - available
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        origin:
+          type: string
+          enum:
+            - USER_SHARED
+            - MESSAGE_INTRODUCED
+        introducedByMessageId:
+          type: string
+          format: uuid
+          nullable: true
+        sourceType:
+          type: string
+          enum:
+            - FOOD_RECORD
+            - FOOD_PRODUCT
+            - PLACE
+        sourceId:
+          type: string
+          format: uuid
+        available:
+          type: boolean
+        title:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ChatMessageSourceResponse:
+      type: object
+      required:
+        - referenceId
+        - sourceType
+        - sourceId
+        - sequenceNo
+      properties:
+        referenceId:
+          type: string
+          format: uuid
+        sourceType:
+          type: string
+          enum:
+            - FOOD_RECORD
+            - FOOD_PRODUCT
+            - PLACE
+        sourceId:
+          type: string
+          format: uuid
+        sequenceNo:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+    ChatMessageResponse:
+      type: object
+      required:
+        - id
+        - sessionId
+        - role
+        - content
+        - correlationId
+        - createdAt
+        - sources
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - USER
+            - ASSISTANT
+        content:
+          type: string
+          maxLength: 12000
+        route:
+          type: string
+          nullable: true
+          enum:
+            - SEARCH
+            - SUMMARY
+            - COMPARE
+            - NAVIGATION
+            - OUT_OF_SCOPE
+        responseStatus:
+          type: string
+          nullable: true
+          enum:
+            - SUCCEEDED
+            - FALLBACK_SUCCEEDED
+            - UNSUPPORTED
+            - FAILED
+        correlationId:
+          type: string
+          format: uuid
+        agentTraceId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessageSourceResponse'
+    ChatSessionPageResponse:
+      type: object
+      required:
+        - items
+        - hasNext
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSessionResponse'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    ChatMessagePageResponse:
+      type: object
+      required:
+        - items
+        - hasNext
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessageResponse'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
 responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
@@ -2417,6 +2644,231 @@ responses:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
 paths:
+  /chat/sessions:
+    post:
+      tags:
+        - Chat
+      summary: Create an owner-scoped Chat session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatSessionRequest'
+      responses:
+        '201':
+          description: Created Chat session.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Chat
+      summary: List active owner-scoped Chat sessions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Active Chat sessions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /chat/sessions/{sessionId}:
+    get:
+      tags:
+        - Chat
+      summary: Read an owner-scoped Chat session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Chat session.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Chat
+      summary: Archive an owner-scoped Chat session.
+      description: Archive is a status transition; messages and references are retained.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Chat session archived.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /chat/sessions/{sessionId}/references:
+    post:
+      tags:
+        - Chat
+      summary: Share one authorised FoodMind source into Chat.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareChatReferenceRequest'
+      responses:
+        '201':
+          description: Shared Chat reference.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatReferenceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /chat/sessions/{sessionId}/messages:
+    post:
+      tags:
+        - Chat
+      summary: Send a bounded user message and persist a grounded assistant result.
+      description: The Backend commits the user message before Agent invocation and re-authorises cited sources before storing assistant grounding links.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostChatMessageRequest'
+      responses:
+        '201':
+          description: Assistant message result.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Chat route is unsupported by the bounded Chat workflow.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    get:
+      tags:
+        - Chat
+      summary: Page through owner-scoped Chat messages in stable order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Chat message page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessagePageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /cooking-plans/generate:
     post:
       tags:
