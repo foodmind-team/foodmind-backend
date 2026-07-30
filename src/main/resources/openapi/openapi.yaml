@@ -1576,6 +1576,11 @@ components:
     GenerateRecommendationRequest:
       type: object
       properties:
+        parentSessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional owned parent session for a true re-recommendation. The old session remains immutable.
         groupId:
           type: string
           format: uuid
@@ -1753,6 +1758,100 @@ components:
           description: Backward-compatible alias for items.
           items:
             $ref: '#/components/schemas/RecommendationCandidateResponse'
+    RecommendationFeedbackRequest:
+      type: object
+      required:
+        - eventType
+      properties:
+        candidateId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Required for candidate-level events; null only for RERECOMMEND_REQUESTED.
+        eventType:
+          type: string
+          enum:
+            - ACCEPTED
+            - REJECTED
+            - RERECOMMEND_REQUESTED
+            - LATER_RATED
+            - WOULD_EAT_AGAIN
+        reasonCode:
+          type: string
+          nullable: true
+          enum:
+            - TOO_EXPENSIVE
+            - TOO_FAR
+            - NOT_IN_MOOD
+            - DIETARY_CONCERN
+            - ALLERGEN_CONCERN
+            - RECENTLY_EATEN
+            - PLACE_CONCERN
+            - OTHER
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        resultingFoodRecordId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional owned food record for later-signal events; must match the recommendation context.
+        effectiveUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional rejection constraint cutoff. The backend caps it to the configured reason duration.
+    RecommendationFeedbackResponse:
+      type: object
+      required:
+        - feedbackId
+        - sessionId
+        - eventType
+        - createdAt
+      properties:
+        feedbackId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        candidateId:
+          type: string
+          format: uuid
+          nullable: true
+        eventType:
+          type: string
+        reasonCode:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        resultingFoodRecordId:
+          type: string
+          format: uuid
+          nullable: true
+        effectiveUntil:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        supervisedLabel:
+          type: integer
+          nullable: true
+          enum:
+            - 0
+            - 1
     RecommendationSessionSummary:
       type: object
       properties:
@@ -2156,6 +2255,61 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /recommendations/{sessionId}/feedback:
+    post:
+      tags:
+        - Recommendations
+      summary: Submit immutable recommendation feedback.
+      description: Requires Idempotency-Key. Events are append-only; duplicate retries with the same key and payload return the original event. Passive non-selection is not a supported label.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecommendationFeedbackRequest'
+      responses:
+        '201':
+          description: Feedback event created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationFeedbackResponse'
+        '200':
+          description: Matching idempotent retry resolved to the original event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationFeedbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /recommendations/history:
     get:
       tags:
