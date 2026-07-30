@@ -1,0 +1,48 @@
+{
+  "contractVersion": "recommendation-agent-v1",
+  "requestId": "30000000-0000-4000-8000-000000000001",
+  "sessionId": "30000000-0000-4000-8000-000000000002",
+  "traceId": "30000000-0000-4000-8000-000000000003",
+  "agentTraceId": "agent-trace-valid-normal",
+  "status": "SUCCEEDED",
+  "modelVersion": "recommendation-agent-demo-2026-07-30",
+  "featureSchemaVersion": "recommendation-features-v1",
+  "candidates": [
+    {
+      "candidateId": "30000000-0000-4000-8000-000000000101",
+      "rank": 1,
+      "recommendationType": "PERSONAL",
+      "modelScore": 0.9200000,
+      "reasonCodes": ["CUISINE_MATCH", "WITHIN_BUDGET"],
+      "explanation": "Matches your cuisine pattern and stays inside the budget.",
+      "featureSnapshot": {
+        "cuisineCode": "INDIAN",
+        "priceAmount": 9.50,
+        "currency": "SGD"
+      }
+    },
+    {
+      "candidateId": "30000000-0000-4000-8000-000000000102",
+      "rank": 2,
+      "recommendationType": "EXPLORATORY",
+      "modelScore": 0.7800000,
+      "reasonCodes": ["NOT_RECENTLY_REPEATED", "NEARBY"],
+      "explanation": "A nearby option that has not appeared in recent meals.",
+      "featureSnapshot": {
+        "distanceKm": 1.4
+      }
+    },
+    {
+      "candidateId": "30000000-0000-4000-8000-000000000103",
+      "rank": 3,
+      "recommendationType": "GROUP_INSPIRED",
+      "modelScore": 0.7100000,
+      "reasonCodes": ["TRUSTED_GROUP_RATING"],
+      "explanation": "Your trusted group has strong evidence for this meal.",
+      "featureSnapshot": {
+        "groupRecordCount": 2,
+        "groupAverageRating": 4.7
+      }
+    }
+  ]
+}
