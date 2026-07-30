@@ -1,0 +1,16 @@
+{
+  "contractVersion": "cooking-agent-v1",
+  "requestId": "aaaaaaaa-0000-4000-8000-000000000001",
+  "planId": "bbbbbbbb-0000-4000-8000-000000000001",
+  "traceId": "trace-cooking-invalid",
+  "agentTraceId": "agent-trace-cooking-invalid",
+  "status": "SUCCEEDED",
+  "sourceRecipeId": "39999999-0000-4000-8000-000000000999",
+  "servings": 2,
+  "totalMinutes": 35,
+  "estimatedCost": 9.50,
+  "currency": "SGD",
+  "ingredients": [],
+  "steps": [],
+  "warnings": []
+}

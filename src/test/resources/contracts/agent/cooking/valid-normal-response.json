@@ -1,0 +1,35 @@
+{
+  "contractVersion": "cooking-agent-v1",
+  "requestId": "aaaaaaaa-0000-4000-8000-000000000001",
+  "planId": "bbbbbbbb-0000-4000-8000-000000000001",
+  "traceId": "trace-cooking-normal",
+  "agentTraceId": "agent-trace-cooking-normal",
+  "status": "SUCCEEDED",
+  "sourceRecipeId": "30000000-0000-4000-8000-000000000001",
+  "servings": 2,
+  "totalMinutes": 35,
+  "estimatedCost": 9.50,
+  "currency": "SGD",
+  "ingredients": [
+    {
+      "sequenceNo": 1,
+      "ingredientName": "Firm tofu",
+      "quantity": 300,
+      "unit": "g",
+      "availability": "AVAILABLE"
+    }
+  ],
+  "steps": [
+    {
+      "stepNo": 1,
+      "instruction": "Cook the jasmine rice according to its package directions."
+    }
+  ],
+  "warnings": [
+    {
+      "sequenceNo": 1,
+      "warningCode": "BUDGET_ESTIMATE_ONLY",
+      "message": "Costs are an estimate, not a live price."
+    }
+  ]
+}
