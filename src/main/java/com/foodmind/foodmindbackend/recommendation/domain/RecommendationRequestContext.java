@@ -14,6 +14,7 @@ import java.util.UUID;
  */
 
 public record RecommendationRequestContext(
+        UUID parentSessionId,
         UUID groupId,
         String mealType,
         BigDecimal maxBudget,

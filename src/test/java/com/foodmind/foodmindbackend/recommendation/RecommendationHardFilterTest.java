@@ -42,6 +42,7 @@ class RecommendationHardFilterTest {
     private RecommendationRequestContext request(List<String> avoidAllergens, List<String> requiredDietary) {
         return new RecommendationRequestContext(
                 null,
+                null,
                 "DINNER",
                 new BigDecimal("20.00"),
                 "SGD",
