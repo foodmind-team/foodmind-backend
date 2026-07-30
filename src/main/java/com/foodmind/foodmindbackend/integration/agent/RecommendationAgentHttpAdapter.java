@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -43,7 +44,7 @@ public class RecommendationAgentHttpAdapter implements RecommendationAgentPort {
     private final ObjectMapper objectMapper;
 
     public RecommendationAgentHttpAdapter(
-            RestClient recommendationAgentRestClient,
+            @Qualifier("recommendationAgentRestClient") RestClient recommendationAgentRestClient,
             AgentClientProperties properties,
             ObjectMapper objectMapper) {
         this.restClient = recommendationAgentRestClient;

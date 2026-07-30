@@ -14,11 +14,22 @@ import org.springframework.web.client.RestClient;
  */
 
 @Configuration
-@EnableConfigurationProperties(AgentClientProperties.class)
+@EnableConfigurationProperties({AgentClientProperties.class, CookingAgentClientProperties.class})
 class AgentClientConfiguration {
 
     @Bean
     RestClient recommendationAgentRestClient(AgentClientProperties properties) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(properties.getConnectTimeout());
+        requestFactory.setReadTimeout(properties.getReadTimeout());
+        return RestClient.builder()
+                .baseUrl(properties.getBaseUrl())
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    @Bean
+    RestClient cookingAgentRestClient(CookingAgentClientProperties properties) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.getConnectTimeout());
         requestFactory.setReadTimeout(properties.getReadTimeout());
