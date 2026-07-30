@@ -50,6 +50,7 @@ public class GenerateRecommendation {
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final SubmitFeedback submitFeedback;
     private final HardFilterPipeline filterPipeline = new HardFilterPipeline();
     private final FallbackSelector fallbackSelector = new FallbackSelector();
     private final AgentResultValidator agentResultValidator = new AgentResultValidator();
@@ -61,7 +62,8 @@ public class GenerateRecommendation {
             RecommendationAgentPort recommendationAgentPort,
             IdempotencyService idempotencyService,
             ObjectMapper objectMapper,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            SubmitFeedback submitFeedback) {
         this.contextQuery = contextQuery;
         this.transactionService = transactionService;
         this.sessionRepository = sessionRepository;
@@ -69,10 +71,12 @@ public class GenerateRecommendation {
         this.idempotencyService = idempotencyService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        this.submitFeedback = submitFeedback;
     }
 
     public RecommendationResult handle(UUID userId, RecommendationRequestContext request, String idempotencyKey) {
         validateGroup(userId, request);
+        validateParentSession(userId, request);
         Map<String, Object> requestSnapshot = requestSnapshot(request);
         String canonicalRequest = toJson(requestSnapshot);
         String requestHash = idempotencyService.sha256Hex(canonicalRequest);
@@ -162,6 +166,7 @@ public class GenerateRecommendation {
     private Map<String, Object> requestSnapshot(RecommendationRequestContext request) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("contractVersion", "recommendation-public-v1");
+        snapshot.put("parentSessionId", request.parentSessionId());
         snapshot.put("groupId", request.groupId());
         snapshot.put("mealType", request.mealType());
         snapshot.put("maxBudget", request.maxBudget());
@@ -191,6 +196,12 @@ public class GenerateRecommendation {
             return UUID.fromString(traceId);
         } catch (IllegalArgumentException exception) {
             return UUID.randomUUID();
+        }
+    }
+
+    private void validateParentSession(UUID userId, RecommendationRequestContext request) {
+        if (request.parentSessionId() != null) {
+            submitFeedback.linkReRecommendation(userId, request.parentSessionId());
         }
     }
 

@@ -19,6 +19,7 @@ import java.util.UUID;
  */
 
 public record GenerateRecommendationRequest(
+        UUID parentSessionId,
         UUID groupId,
         @Size(max = 40) String mealType,
         @DecimalMin("0.0") BigDecimal maxBudget,
@@ -36,6 +37,7 @@ public record GenerateRecommendationRequest(
                 ? new RecommendationConstraintsRequest(null, null, null, null)
                 : constraints;
         return new RecommendationRequestContext(
+                parentSessionId,
                 groupId,
                 mealType,
                 maxBudget,

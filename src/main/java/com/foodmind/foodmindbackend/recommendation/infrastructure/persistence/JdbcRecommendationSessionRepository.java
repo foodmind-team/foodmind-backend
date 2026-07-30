@@ -57,12 +57,12 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         UUID sessionId = UUID.randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO recommendation_session (
-                    id, user_id, group_id, status, meal_type, max_budget, currency, area,
+                    id, user_id, group_id, parent_session_id, status, meal_type, max_budget, currency, area,
                     latitude, longitude, max_distance_km, mood, requested_for, request_context,
                     public_contract_version, model_status, fallback_status, correlation_id
                 )
                 VALUES (
-                    :id, :userId, :groupId, 'CREATED', :mealType, :maxBudget, :currency, :area,
+                    :id, :userId, :groupId, :parentSessionId, 'CREATED', :mealType, :maxBudget, :currency, :area,
                     :latitude, :longitude, :maxDistanceKm, :mood, :requestedFor, CAST(:requestContext AS jsonb),
                     :publicContractVersion, 'NOT_REQUESTED', 'NOT_STARTED', :correlationId
                 )
@@ -71,6 +71,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                         .addValue("id", sessionId)
                         .addValue("userId", userId)
                         .addValue("groupId", request.groupId())
+                        .addValue("parentSessionId", request.parentSessionId())
                         .addValue("mealType", request.mealType())
                         .addValue("maxBudget", request.maxBudget())
                         .addValue("currency", request.currency())
@@ -501,7 +502,6 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
 
     private Map<String, Object> featureSnapshot(CandidateEvidence evidence) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
-        snapshot.put("placeMealId", evidence.placeMealId());
         snapshot.put("mealType", evidence.mealType());
         snapshot.put("cuisineCode", evidence.cuisineCode());
         snapshot.put("area", evidence.area());
