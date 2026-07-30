@@ -21,3 +21,10 @@ Cleanup retries deletion of soft-deleted objects, so an object-store outage
 does not resurrect an asset or affect a different immutable object key. Roll
 back application code with the previous image; do not reverse the existing V5
 media schema migration.
+
+Before deployment, retain redacted evidence of a successful instruction and
+finalisation, a foreign-owner `404`, a metadata-mismatch rejection, and stale
+cleanup. Run `./mvnw test -Dtest="*Media*"`, `./mvnw test`, then the Postman
+`15 - Media Upload` folder after the local bucket exists. Do not include an
+object key, presigned URL, query signature, bearer token, or image content in
+the evidence.
