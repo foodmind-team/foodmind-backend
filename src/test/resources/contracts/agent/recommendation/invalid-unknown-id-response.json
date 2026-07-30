@@ -1,0 +1,21 @@
+{
+  "contractVersion": "recommendation-agent-v1",
+  "requestId": "30000000-0000-4000-8000-000000000001",
+  "sessionId": "30000000-0000-4000-8000-000000000002",
+  "traceId": "30000000-0000-4000-8000-000000000003",
+  "agentTraceId": "agent-trace-invalid-unknown-id",
+  "status": "SUCCEEDED",
+  "modelVersion": "recommendation-agent-demo-2026-07-30",
+  "featureSchemaVersion": "recommendation-features-v1",
+  "candidates": [
+    {
+      "candidateId": "39999999-0000-4000-8000-000000000999",
+      "rank": 1,
+      "recommendationType": "PERSONAL",
+      "modelScore": 0.8100000,
+      "reasonCodes": ["CUISINE_MATCH"],
+      "explanation": "Unknown candidate ID must be rejected.",
+      "featureSnapshot": {}
+    }
+  ]
+}

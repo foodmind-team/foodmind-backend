@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * @description:
@@ -39,6 +40,7 @@ public class IdempotencyService {
         }
     }
 
+    @Transactional
     public IdempotencyRecord begin(UUID userId, String operation, String idempotencyKey, String requestHash) {
         String safeKey = validateKey(idempotencyKey);
         UUID id = UUID.randomUUID();
@@ -85,6 +87,7 @@ public class IdempotencyService {
         return record;
     }
 
+    @Transactional
     public void complete(UUID recordId, UUID resourceId, int responseStatus, Object responseBody) {
         jdbcTemplate.update("""
                 UPDATE idempotency_record

@@ -60,7 +60,7 @@ class HistoryQueryAdapterTest extends PostgreSqlContainerSupport {
         String otherToken = read(register("history-other@example.test", "History Other"), "$.accessToken");
         insertFood(ownerUserId, FOOD_ID, "Late Sunday Supper", "2026-07-26T15:59:00Z", null);
         insertDrink(ownerUserId, DRINK_ID, "Monday Milk Tea", "2026-07-26T16:01:00Z", null);
-        insertDrink(ownerUserId, DELETED_DRINK_ID, "Deleted Tea", "2026-07-26T16:02:00Z", OffsetDateTime.parse("2026-07-30T00:00:00Z"));
+        insertDrink(ownerUserId, DELETED_DRINK_ID, "Deleted Tea", "2026-07-26T16:02:00Z", OffsetDateTime.parse("2030-07-30T00:00:00Z"));
 
         mockMvc.perform(get("/api/v1/history")
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
