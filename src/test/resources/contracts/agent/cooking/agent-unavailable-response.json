@@ -1,0 +1,12 @@
+{
+  "contractVersion": "cooking-agent-v1",
+  "requestId": "aaaaaaaa-0000-4000-8000-000000000001",
+  "planId": "bbbbbbbb-0000-4000-8000-000000000001",
+  "traceId": "trace-cooking-unavailable",
+  "agentTraceId": "agent-trace-cooking-unavailable",
+  "status": "UNAVAILABLE",
+  "sourceRecipeId": null,
+  "ingredients": [],
+  "steps": [],
+  "warnings": []
+}
