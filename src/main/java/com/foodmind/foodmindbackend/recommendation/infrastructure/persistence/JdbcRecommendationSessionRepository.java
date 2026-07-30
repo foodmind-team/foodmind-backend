@@ -10,6 +10,9 @@ import com.foodmind.foodmindbackend.recommendation.domain.RecommendationResult;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationSessionSummary;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationType;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.AgentFailureCode;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.ValidatedAgentCandidate;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.ValidatedAgentResult;
 import com.foodmind.foodmindbackend.recommendation.domain.fallback.SelectedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.reason.ReasonCode;
 import java.math.BigDecimal;
@@ -84,24 +87,32 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     }
 
     @Override
-    public void insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates) {
+    public Map<UUID, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion) {
+        Map<UUID, UUID> candidateIdsByPlaceMeal = new LinkedHashMap<>();
         for (EvaluatedCandidate candidate : candidates) {
+            UUID candidateId = UUID.randomUUID();
+            candidateIdsByPlaceMeal.put(candidate.evidence().placeMealId(), candidateId);
             jdbcTemplate.update("""
                     INSERT INTO recommendation_candidate (
-                        id, session_id, place_meal_id, eligibility_status, filter_code, evidence_snapshot
+                        id, session_id, place_meal_id, eligibility_status, filter_code,
+                        feature_schema_version, feature_snapshot, evidence_snapshot
                     )
                     VALUES (
-                        :id, :sessionId, :placeMealId, :eligibilityStatus, :filterCode, CAST(:evidenceSnapshot AS jsonb)
+                        :id, :sessionId, :placeMealId, :eligibilityStatus, :filterCode,
+                        :featureSchemaVersion, CAST(:featureSnapshot AS jsonb), CAST(:evidenceSnapshot AS jsonb)
                     )
                     """,
                     new MapSqlParameterSource()
-                            .addValue("id", UUID.randomUUID())
+                            .addValue("id", candidateId)
                             .addValue("sessionId", sessionId)
                             .addValue("placeMealId", candidate.evidence().placeMealId())
                             .addValue("eligibilityStatus", candidate.eligible() ? "ELIGIBLE" : "FILTERED")
                             .addValue("filterCode", candidate.filterCode() == null ? null : candidate.filterCode().name())
+                            .addValue("featureSchemaVersion", featureSchemaVersion)
+                            .addValue("featureSnapshot", toJson(featureSnapshot(candidate.evidence())))
                             .addValue("evidenceSnapshot", toJson(evidenceSnapshot(candidate.evidence()))));
         }
+        return candidateIdsByPlaceMeal;
     }
 
     @Override
@@ -117,7 +128,57 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     }
 
     @Override
-    public void completeFallback(UUID sessionId, List<SelectedCandidate> selectedCandidates) {
+    public void completeAgent(UUID userId, UUID sessionId, ValidatedAgentResult result) {
+        lockProcessingSession(userId, sessionId);
+        for (ValidatedAgentCandidate selectedCandidate : result.candidates()) {
+            insertReasons(selectedCandidate.candidateId(), selectedCandidate);
+            jdbcTemplate.update("""
+                    UPDATE recommendation_candidate
+                    SET eligibility_status = 'RETURNED',
+                        candidate_type = :candidateType,
+                        rank = :rank,
+                        model_score = :modelScore
+                    WHERE id = :candidateId
+                      AND session_id = :sessionId
+                      AND eligibility_status = 'ELIGIBLE'
+                    """,
+                    new MapSqlParameterSource()
+                            .addValue("candidateId", selectedCandidate.candidateId())
+                            .addValue("sessionId", sessionId)
+                            .addValue("candidateType", selectedCandidate.recommendationType().name())
+                            .addValue("rank", selectedCandidate.rank())
+                            .addValue("modelScore", selectedCandidate.modelScore()));
+        }
+        jdbcTemplate.update("""
+                UPDATE recommendation_session
+                SET status = 'SUCCEEDED',
+                    agent_contract_version = :agentContractVersion,
+                    model_status = 'SUCCEEDED',
+                    model_version = :modelVersion,
+                    fallback_status = 'NOT_REQUIRED',
+                    agent_trace_id = :agentTraceId,
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE id = :sessionId
+                  AND user_id = :userId
+                  AND status = 'PROCESSING'
+                """,
+                new MapSqlParameterSource()
+                        .addValue("sessionId", sessionId)
+                        .addValue("userId", userId)
+                        .addValue("agentContractVersion", result.agentContractVersion())
+                        .addValue("modelVersion", result.modelVersion())
+                        .addValue("agentTraceId", result.agentTraceId()));
+    }
+
+    @Override
+    public void completeFallback(
+            UUID userId,
+            UUID sessionId,
+            List<SelectedCandidate> selectedCandidates,
+            AgentFailureCode failureCode,
+            String agentContractVersion,
+            String agentTraceId) {
+        lockProcessingSession(userId, sessionId);
         for (SelectedCandidate selectedCandidate : selectedCandidates) {
             UUID candidateId = candidateId(sessionId, selectedCandidate.candidate().evidence().placeMealId());
             insertReasons(candidateId, selectedCandidate);
@@ -137,20 +198,31 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                             .addValue("fallbackScore", selectedCandidate.fallbackScore()));
         }
         boolean empty = selectedCandidates.isEmpty();
+        String modelStatus = failureCode == null ? "NOT_REQUESTED" : failureCode.modelStatus();
         jdbcTemplate.update("""
                 UPDATE recommendation_session
                 SET status = :status,
+                    agent_contract_version = :agentContractVersion,
+                    model_status = :modelStatus,
                     fallback_status = :fallbackStatus,
                     fallback_version = :fallbackVersion,
+                    agent_trace_id = :agentTraceId,
+                    failure_code = :failureCode,
                     completed_at = CURRENT_TIMESTAMP
                 WHERE id = :sessionId
+                  AND user_id = :userId
                   AND status = 'PROCESSING'
                 """,
                 new MapSqlParameterSource()
                         .addValue("sessionId", sessionId)
+                        .addValue("userId", userId)
                         .addValue("status", empty ? "NO_VALID_CANDIDATE" : "FALLBACK_SUCCEEDED")
+                        .addValue("agentContractVersion", agentContractVersion)
+                        .addValue("modelStatus", modelStatus)
                         .addValue("fallbackStatus", empty ? "NO_VALID_CANDIDATE" : "SUCCEEDED")
-                        .addValue("fallbackVersion", FALLBACK_VERSION));
+                        .addValue("fallbackVersion", FALLBACK_VERSION)
+                        .addValue("agentTraceId", agentTraceId)
+                        .addValue("failureCode", failureCode == null ? null : failureCode.name()));
     }
 
     @Override
@@ -230,7 +302,40 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                 UUID.class);
     }
 
+    private void lockProcessingSession(UUID userId, UUID sessionId) {
+        List<UUID> locked = jdbcTemplate.query("""
+                SELECT id
+                FROM recommendation_session
+                WHERE id = :sessionId
+                  AND user_id = :userId
+                  AND status = 'PROCESSING'
+                FOR UPDATE
+                """,
+                new MapSqlParameterSource()
+                        .addValue("sessionId", sessionId)
+                        .addValue("userId", userId),
+                (rs, rowNum) -> rs.getObject("id", UUID.class));
+        if (locked.isEmpty()) {
+            throw new IllegalStateException("Recommendation session is not completable.");
+        }
+    }
+
     private void insertReasons(UUID candidateId, SelectedCandidate selectedCandidate) {
+        int sequence = 1;
+        for (ReasonCode reasonCode : selectedCandidate.reasonCodes()) {
+            jdbcTemplate.update("""
+                    INSERT INTO candidate_reason (candidate_id, sequence_no, reason_code, evidence_json)
+                    VALUES (:candidateId, :sequenceNo, :reasonCode, CAST(:evidenceJson AS jsonb))
+                    """,
+                    new MapSqlParameterSource()
+                            .addValue("candidateId", candidateId)
+                            .addValue("sequenceNo", sequence++)
+                            .addValue("reasonCode", reasonCode.name())
+                            .addValue("evidenceJson", toJson(reasonEvidence(reasonCode, selectedCandidate))));
+        }
+    }
+
+    private void insertReasons(UUID candidateId, ValidatedAgentCandidate selectedCandidate) {
         int sequence = 1;
         for (ReasonCode reasonCode : selectedCandidate.reasonCodes()) {
             jdbcTemplate.update("""
@@ -394,6 +499,28 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         return snapshot;
     }
 
+    private Map<String, Object> featureSnapshot(CandidateEvidence evidence) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("placeMealId", evidence.placeMealId());
+        snapshot.put("mealType", evidence.mealType());
+        snapshot.put("cuisineCode", evidence.cuisineCode());
+        snapshot.put("area", evidence.area());
+        snapshot.put("priceAmount", evidence.price() == null ? null : evidence.price().amount());
+        snapshot.put("currency", evidence.price() == null ? null : evidence.price().currency());
+        snapshot.put("spiceLevel", evidence.spiceLevel());
+        snapshot.put("available", evidence.available());
+        snapshot.put("cleanlinessScore", evidence.cleanliness() == null ? null : evidence.cleanliness().score());
+        snapshot.put("dietaryTagCodes", evidence.dietaryTagCodes());
+        snapshot.put("allergenCodes", evidence.allergenCodes());
+        snapshot.put("wantToTry", evidence.wantToTry());
+        snapshot.put("personalRecordCount", evidence.personalRecordCount());
+        snapshot.put("personalAverageRating", evidence.personalAverageRating());
+        snapshot.put("groupRecordCount", evidence.groupRecordCount());
+        snapshot.put("groupAverageRating", evidence.groupAverageRating());
+        snapshot.put("distanceKm", evidence.distanceKm());
+        return snapshot;
+    }
+
     private Map<String, Object> reasonEvidence(ReasonCode reasonCode, SelectedCandidate selectedCandidate) {
         CandidateEvidence evidence = selectedCandidate.candidate().evidence();
         Map<String, Object> reason = new LinkedHashMap<>();
@@ -413,6 +540,16 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         if (reasonCode == ReasonCode.NEARBY) {
             reason.put("distanceKm", evidence.distanceKm());
         }
+        return reason;
+    }
+
+    private Map<String, Object> reasonEvidence(ReasonCode reasonCode, ValidatedAgentCandidate selectedCandidate) {
+        Map<String, Object> reason = new LinkedHashMap<>();
+        reason.put("reasonCode", reasonCode.name());
+        reason.put("candidateType", selectedCandidate.recommendationType().name());
+        reason.put("candidateId", selectedCandidate.candidateId());
+        reason.put("explanation", selectedCandidate.explanation());
+        reason.put("source", "AGENT");
         return reason;
     }
 

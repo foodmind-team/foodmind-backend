@@ -4,6 +4,8 @@ import com.foodmind.foodmindbackend.recommendation.domain.EvaluatedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationResult;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationSessionSummary;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.AgentFailureCode;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.ValidatedAgentResult;
 import com.foodmind.foodmindbackend.recommendation.domain.fallback.SelectedCandidate;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +23,19 @@ public interface RecommendationSessionRepository {
 
     UUID createSession(UUID userId, RecommendationRequestContext request, Map<String, Object> requestSnapshot, UUID correlationId);
 
-    void insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates);
+    Map<UUID, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion);
 
     void markProcessing(UUID sessionId);
 
-    void completeFallback(UUID sessionId, List<SelectedCandidate> selectedCandidates);
+    void completeAgent(UUID userId, UUID sessionId, ValidatedAgentResult result);
+
+    void completeFallback(
+            UUID userId,
+            UUID sessionId,
+            List<SelectedCandidate> selectedCandidates,
+            AgentFailureCode failureCode,
+            String agentContractVersion,
+            String agentTraceId);
 
     Optional<RecommendationResult> findResult(UUID userId, UUID sessionId, String traceId);
 
