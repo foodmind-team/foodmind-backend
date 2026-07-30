@@ -63,6 +63,66 @@ components:
       schema:
         type: string
   schemas:
+    CreateMediaUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [contentType, byteSize, checksumSha256]
+      properties:
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        byteSize:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 5242880
+        checksumSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          example: 24a740c376abe9a5dc3e2a4df541ba7a0cf5c18d5d65f0c8d522141689a308bb
+    MediaUploadInstructionResponse:
+      type: object
+      required: [mediaAssetId, status, uploadUrl, requiredHeaders, expiresAt]
+      properties:
+        mediaAssetId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING]
+        uploadUrl:
+          type: string
+          format: uri
+          description: Sensitive short-lived presigned URL. Never log or persist it.
+        requiredHeaders:
+          type: object
+          additionalProperties:
+            type: string
+          description: Exact allow-listed headers that must be sent to object storage.
+        expiresAt:
+          type: string
+          format: date-time
+    MediaAssetResponse:
+      type: object
+      required: [mediaAssetId, status, contentType, byteSize, createdAt]
+      properties:
+        mediaAssetId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, READY, DELETED]
+        contentType:
+          type: string
+        byteSize:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        finalisedAt:
+          type: string
+          format: date-time
     ApiFieldError:
       type: object
       required:
@@ -2738,6 +2798,70 @@ components:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
 paths:
+  /media/uploads:
+    post:
+      tags: [Media]
+      summary: Create a bounded, owner-controlled pending image upload.
+      description: Returns a sensitive short-lived presigned PUT instruction. Clients must not log, share, or send the Backend bearer token to the returned URL.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMediaUploadRequest'
+      responses:
+        '201':
+          description: Pending asset and one short-lived upload instruction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUploadInstructionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /media/{mediaAssetId}/finalise:
+    post:
+      tags: [Media]
+      summary: Verify uploaded object metadata and make an owned asset READY.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mediaAssetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Verified READY asset; repeating the call is idempotent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaAssetResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          description: Object storage could not be reached; no storage error details are disclosed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+  /media/{mediaAssetId}:
+    delete:
+      tags: [Media]
+      summary: Soft-delete an owned asset and schedule idempotent object cleanup.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mediaAssetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Asset deactivated; physical deletion is retried if needed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /dashboard:
     get:
       tags:
