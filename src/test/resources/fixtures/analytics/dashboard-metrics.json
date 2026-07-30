@@ -1,0 +1,26 @@
+{
+  "window": {
+    "from": "2026-07-27T00:00:00Z",
+    "to": "2026-08-03T00:00:00Z",
+    "groupBy": "WEEK",
+    "timeZone": "UTC"
+  },
+  "expectations": {
+    "currencyTotals": [
+      { "currency": "SGD", "value": 12.50 },
+      { "currency": "USD", "value": 8.00 }
+    ],
+    "undefinedDenominator": {
+      "code": "ACCEPTANCE_RATE",
+      "value": null,
+      "denominator": 0,
+      "empty": true
+    },
+    "rules": [
+      "Deleted food and drink records are excluded.",
+      "Only explicit ACCEPTED and REJECTED feedback contributes to decision rates.",
+      "Passive recommendation non-selection is not a rejection.",
+      "Currencies remain separate and are never converted or summed."
+    ]
+  }
+}
