@@ -18,6 +18,8 @@ public class SecurityProperties {
     private final Jwt jwt = new Jwt();
     private final Refresh refresh = new Refresh();
     private final Web web = new Web();
+    private final Delegation delegation = new Delegation();
+    private final InternalService internalService = new InternalService();
 
     public Jwt getJwt() {
         return jwt;
@@ -29,6 +31,14 @@ public class SecurityProperties {
 
     public Web getWeb() {
         return web;
+    }
+
+    public Delegation getDelegation() {
+        return delegation;
+    }
+
+    public InternalService getInternalService() {
+        return internalService;
     }
 
     public static class Jwt {
@@ -103,6 +113,39 @@ public class SecurityProperties {
 
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins;
+        }
+    }
+
+    public static class Delegation {
+        private String audience = "foodmind-agent-tools";
+        private Duration tokenTtl = Duration.ofMinutes(2);
+
+        public String getAudience() {
+            return audience;
+        }
+
+        public void setAudience(String audience) {
+            this.audience = audience;
+        }
+
+        public Duration getTokenTtl() {
+            return tokenTtl;
+        }
+
+        public void setTokenTtl(Duration tokenTtl) {
+            this.tokenTtl = tokenTtl;
+        }
+    }
+
+    public static class InternalService {
+        private String token = "";
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
         }
     }
 }

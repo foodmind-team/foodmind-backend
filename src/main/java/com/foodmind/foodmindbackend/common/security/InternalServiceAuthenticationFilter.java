@@ -1,16 +1,12 @@
 package com.foodmind.foodmindbackend.common.security;
 
 import com.foodmind.foodmindbackend.common.error.GlobalExceptionHandler;
-import com.foodmind.foodmindbackend.user.application.port.UserAccountRepository;
-import com.foodmind.foodmindbackend.user.domain.User;
-import com.foodmind.foodmindbackend.user.domain.UserStatus;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -22,25 +18,25 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * @description:
  * @author: chenyaqi
  * @email: terrence.yaqi.chen@u.nus.edu
- * @date: 29/7/2026 8:00 pm
+ * @date: 30/07/2026 01:05 pm
  */
 
 @Component
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class InternalServiceAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final JwtIssuer jwtIssuer;
-    private final UserAccountRepository userAccountRepository;
+    private final SecurityProperties properties;
     private final GlobalExceptionHandler exceptionHandler;
 
-    public JwtAuthenticationFilter(
-            JwtIssuer jwtIssuer,
-            UserAccountRepository userAccountRepository,
-            GlobalExceptionHandler exceptionHandler) {
-        this.jwtIssuer = jwtIssuer;
-        this.userAccountRepository = userAccountRepository;
+    public InternalServiceAuthenticationFilter(SecurityProperties properties, GlobalExceptionHandler exceptionHandler) {
+        this.properties = properties;
         this.exceptionHandler = exceptionHandler;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return !request.getRequestURI().startsWith("/internal/v1/");
     }
 
     @Override
@@ -48,37 +44,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
+        String expected = properties.getInternalService().getToken();
         String authorization = request.getHeader("Authorization");
-        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+        if (expected == null || expected.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
-        if (authorization == null || authorization.isBlank()) {
+        if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
             filterChain.doFilter(request, response);
             return;
         }
-        if (!authorization.startsWith(BEARER_PREFIX)) {
-            throw new BadCredentialsException("Unsupported authorization header.");
-        }
-
         try {
-            JwtIssuer.VerifiedAccessToken token = jwtIssuer.verify(authorization.substring(BEARER_PREFIX.length()));
-            User user = userAccountRepository.findById(token.userId())
-                    .filter(candidate -> candidate.status() == UserStatus.ACTIVE)
-                    .orElseThrow(() -> new BadCredentialsException("User is not active."));
-            FoodMindPrincipal principal = new FoodMindPrincipal(
-                    user.id(),
-                    user.email(),
-                    user.displayName(),
-                    user.role(),
-                    user.status());
+            String supplied = authorization.substring(BEARER_PREFIX.length());
+            if (!expected.equals(supplied)) {
+                throw new BadCredentialsException("Invalid service token.");
+            }
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    principal,
+                    "foodmind-agent-service",
                     null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())));
+                    List.of(new SimpleGrantedAuthority("SERVICE")));
             SecurityContextHolder.getContext().setAuthentication(authentication);
             filterChain.doFilter(request, response);
-        } catch (AuthenticationException exception) {
+        } catch (BadCredentialsException exception) {
             SecurityContextHolder.clearContext();
             exceptionHandler.handleAuthenticationFailure(request, response, exception);
         }

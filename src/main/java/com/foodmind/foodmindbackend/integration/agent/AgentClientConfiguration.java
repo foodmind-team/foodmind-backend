@@ -14,7 +14,7 @@ import org.springframework.web.client.RestClient;
  */
 
 @Configuration
-@EnableConfigurationProperties({AgentClientProperties.class, CookingAgentClientProperties.class})
+@EnableConfigurationProperties({AgentClientProperties.class, CookingAgentClientProperties.class, ChatAgentClientProperties.class})
 class AgentClientConfiguration {
 
     @Bean
@@ -30,6 +30,17 @@ class AgentClientConfiguration {
 
     @Bean
     RestClient cookingAgentRestClient(CookingAgentClientProperties properties) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(properties.getConnectTimeout());
+        requestFactory.setReadTimeout(properties.getReadTimeout());
+        return RestClient.builder()
+                .baseUrl(properties.getBaseUrl())
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    @Bean
+    RestClient chatAgentRestClient(ChatAgentClientProperties properties) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.getConnectTimeout());
         requestFactory.setReadTimeout(properties.getReadTimeout());

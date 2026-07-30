@@ -33,7 +33,8 @@ class SecurityConfiguration {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             GlobalExceptionHandler exceptionHandler,
-            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            InternalServiceAuthenticationFilter internalServiceAuthenticationFilter) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
@@ -51,6 +52,7 @@ class SecurityConfiguration {
                         .requestMatchers("/api/v1/**").authenticated()
                         .requestMatchers("/internal/v1/**").hasAuthority("SERVICE")
                         .anyRequest().denyAll())
+                .addFilterBefore(internalServiceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

@@ -1,0 +1,35 @@
+package com.foodmind.foodmindbackend.integration.agent.dto;
+
+import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * @description:
+ * @author: chenyaqi
+ * @email: terrence.yaqi.chen@u.nus.edu
+ * @date: 30/07/2026 01:05 pm
+ */
+
+public record AgentChatRequest(
+        String contractVersion,
+        UUID requestId,
+        UUID sessionId,
+        UUID userMessageId,
+        String traceId,
+        String message,
+        String delegationToken,
+        List<AgentChatReferenceRequest> sharedReferences) {
+
+    public static AgentChatRequest from(ChatAgentCommand command) {
+        return new AgentChatRequest(
+                command.contractVersion(),
+                command.requestId(),
+                command.sessionId(),
+                command.userMessageId(),
+                command.traceId(),
+                command.message(),
+                command.delegationToken(),
+                command.sharedReferences().stream().map(AgentChatReferenceRequest::from).toList());
+    }
+}
