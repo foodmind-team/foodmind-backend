@@ -2570,7 +2570,101 @@ components:
           nullable: true
         hasNext:
           type: boolean
-responses:
+    DashboardMetricResponse:
+      type: object
+      required:
+        - code
+        - label
+        - period
+        - unit
+        - empty
+      properties:
+        code:
+          type: string
+          example: SPENDING_TOTAL
+        label:
+          type: string
+          example: Spending total
+        period:
+          type: string
+          format: date
+        value:
+          type: number
+          nullable: true
+          example: 24.50
+        unit:
+          type: string
+          enum: [COUNT, RATING, RATE, MONEY]
+        currency:
+          type: string
+          nullable: true
+          example: SGD
+        samples:
+          type: integer
+          format: int64
+          nullable: true
+        denominator:
+          type: integer
+          format: int64
+          nullable: true
+        empty:
+          type: boolean
+          description: True when the metric denominator or value is undefined; clients must not invent zero.
+        dimension:
+          type: string
+          nullable: true
+          example: SGD
+        dimensionLabel:
+          type: string
+          nullable: true
+          example: Singapore dollar
+    DashboardResponse:
+      type: object
+      required: [from, to, groupBy, timeZone, empty, metrics, spendingTotals]
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        groupBy:
+          type: string
+          enum: [DAY, WEEK, MONTH]
+        timeZone:
+          type: string
+          example: Asia/Singapore
+        empty:
+          type: boolean
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardMetricResponse'
+        spendingTotals:
+          type: array
+          description: Convenience subset of metrics containing one total per currency and period.
+          items:
+            $ref: '#/components/schemas/DashboardMetricResponse'
+    WeeklyRecapResponse:
+      type: object
+      required: [weekStart, timeZone, empty, metrics, spendingTotals]
+      properties:
+        weekStart:
+          type: string
+          format: date
+        timeZone:
+          type: string
+        empty:
+          type: boolean
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardMetricResponse'
+        spendingTotals:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardMetricResponse'
+  responses:
     BadRequest:
       description: Request validation or JSON parsing failed.
       headers:
@@ -2644,6 +2738,80 @@ responses:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
 paths:
+  /dashboard:
+    get:
+      tags:
+        - Analytics
+      summary: Read server-owned dashboard metrics for a bounded local date range.
+      description: Metrics are derived only from the authenticated owner's non-deleted source records and explicit recommendation feedback. Currency totals are always returned separately.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          description: Exclusive upper boundary.
+          schema:
+            type: string
+            format: date
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DAY, WEEK, MONTH]
+            default: DAY
+        - name: timeZone
+          in: query
+          required: false
+          description: Optional IANA timezone. Defaults to the authenticated user's profile timezone.
+          schema:
+            type: string
+            example: Asia/Singapore
+      responses:
+        '200':
+          description: Presentation-neutral metrics with explicit empty-state metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /weekly-recaps/{weekStart}:
+    get:
+      tags:
+        - Analytics
+      summary: Read a concise owner-local weekly recap.
+      description: weekStart must be a Monday in the authenticated user's profile timezone. No cross-currency total is calculated.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2026-07-27'
+      responses:
+        '200':
+          description: Weekly recap or explicit empty projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyRecapResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /chat/sessions:
     post:
       tags:
