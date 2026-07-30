@@ -10,6 +10,8 @@ import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +54,8 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
     @BeforeEach
     void cleanUserContent() {
         jdbcTemplate.execute("TRUNCATE TABLE food_record, drink_record, media_asset, auth_session, app_user CASCADE");
+        StorageTestConfiguration.METADATA.set(null);
+        StorageTestConfiguration.DELETE_CALLED.set(false);
     }
 
     @Test
@@ -92,6 +96,62 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.fieldErrors[0].code").value("MEDIA_SIZE_OUT_OF_RANGE"));
     }
 
+    @Test
+    void finalisesMatchingMetadataIdempotentlyAndHidesForeignAssets() throws Exception {
+        String ownerToken = tokenFor("media-finalise-owner@example.test");
+        String otherToken = tokenFor("media-finalise-other@example.test");
+        String assetId = createAsset(ownerToken);
+        StorageTestConfiguration.METADATA.set(new ObjectStoragePort.ObjectMetadata("image/jpeg", 128,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("READY"));
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("READY"));
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(otherToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsMissingOrMismatchedStorageObjectsAndDeletesThemSafely() throws Exception {
+        String token = tokenFor("media-mismatch@example.test");
+        String missingAssetId = createAsset(token);
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", missingAssetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors[0].code").value("OBJECT_NOT_FOUND"));
+
+        String mismatchedAssetId = createAsset(token);
+        StorageTestConfiguration.METADATA.set(new ObjectStoragePort.ObjectMetadata("image/png", 128,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", mismatchedAssetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors[0].code").value("STORAGE_METADATA_MISMATCH"));
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM media_asset WHERE id = ?", String.class, java.util.UUID.fromString(mismatchedAssetId)))
+                .isEqualTo("DELETED");
+        org.assertj.core.api.Assertions.assertThat(StorageTestConfiguration.DELETE_CALLED.get()).isTrue();
+    }
+
+    @Test
+    void deletionIsIdempotentAndPreventsFutureFinalisation() throws Exception {
+        String token = tokenFor("media-delete@example.test");
+        String assetId = createAsset(token);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/media/{id}", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/media/{id}", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNotFound());
+    }
+
+    private String createAsset(String token) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/media/uploads").header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contentType\":\"image/jpeg\",\"byteSize\":128,\"checksumSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        return read(result, "$.mediaAssetId");
+    }
+
     private String tokenFor(String email) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -110,6 +170,9 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
 
     @TestConfiguration
     static class StorageTestConfiguration {
+        static final AtomicReference<ObjectStoragePort.ObjectMetadata> METADATA = new AtomicReference<>();
+        static final AtomicBoolean DELETE_CALLED = new AtomicBoolean();
+
         @Bean
         @Primary
         ObjectStoragePort objectStoragePort() {
@@ -120,8 +183,12 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
                             Map.of("Content-Type", contentType, "Content-Length", Long.toString(byteSize)),
                             OffsetDateTime.parse("2026-07-30T16:45:00Z"));
                 }
-                @Override public ObjectMetadata headObject(String objectKey) { throw new UnsupportedOperationException(); }
-                @Override public void deleteObject(String objectKey) { }
+                @Override public ObjectMetadata headObject(String objectKey) {
+                    ObjectStoragePort.ObjectMetadata metadata = METADATA.get();
+                    if (metadata == null) throw new ObjectMissingException();
+                    return metadata;
+                }
+                @Override public void deleteObject(String objectKey) { DELETE_CALLED.set(true); }
             };
         }
     }

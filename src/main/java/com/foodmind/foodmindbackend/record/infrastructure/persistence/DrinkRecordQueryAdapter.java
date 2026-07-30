@@ -193,6 +193,14 @@ public class DrinkRecordQueryAdapter implements DrinkRecordQuery {
                           AND owner_user_id = :ownerUserId
                           AND status = 'READY'
                           AND deleted_at IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM food_record fr
+                              WHERE fr.media_asset_id = media_asset.id AND fr.deleted_at IS NULL
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM drink_record dr
+                              WHERE dr.media_asset_id = media_asset.id AND dr.deleted_at IS NULL
+                          )
                         """,
                 new MapSqlParameterSource()
                         .addValue("id", mediaAssetId)

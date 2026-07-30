@@ -2822,6 +2822,46 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /media/{mediaAssetId}/finalise:
+    post:
+      tags: [Media]
+      summary: Verify uploaded object metadata and make an owned asset READY.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mediaAssetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Verified READY asset; repeating the call is idempotent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaAssetResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          description: Object storage could not be reached; no storage error details are disclosed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+  /media/{mediaAssetId}:
+    delete:
+      tags: [Media]
+      summary: Soft-delete an owned asset and schedule idempotent object cleanup.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mediaAssetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Asset deactivated; physical deletion is retried if needed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /dashboard:
     get:
       tags:
