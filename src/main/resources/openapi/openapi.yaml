@@ -1547,6 +1547,247 @@ components:
         createdAt:
           type: string
           format: date-time
+    RecommendationConstraintsRequest:
+      type: object
+      properties:
+        avoidAllergenCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - PEANUT
+        requiredDietaryTagCodes:
+          type: array
+          items:
+            type: string
+          example:
+            - VEGETARIAN
+        maxSpiceLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          example: 3
+        minimumCleanlinessEvidenceScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Decision-support evidence threshold; missing evidence cannot satisfy this threshold.
+          example: 0.8
+    GenerateRecommendationRequest:
+      type: object
+      properties:
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional active group. Group evidence is resolved server-side and never accepted in the request body.
+        mealType:
+          type: string
+          maxLength: 40
+          example: DINNER
+        maxBudget:
+          type: number
+          minimum: 0
+          example: 25
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: SGD
+        area:
+          type: string
+          maxLength: 120
+          example: Tiong Bahru
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          example: 1.284
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          example: 103.832
+        maxDistanceKm:
+          type: number
+          exclusiveMinimum: 0
+          example: 12
+        mood:
+          type: string
+          maxLength: 120
+          example: COMFORT
+        requestedFor:
+          type: string
+          format: date-time
+          example: "2030-07-30T12:00:00Z"
+        constraints:
+          $ref: '#/components/schemas/RecommendationConstraintsRequest'
+    RecommendationMoney:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          example: 9.50
+        currency:
+          type: string
+          example: SGD
+    RecommendationCandidateResponse:
+      type: object
+      required:
+        - candidateId
+        - placeMealId
+        - mealId
+        - mealName
+        - placeId
+        - placeName
+        - recommendationType
+        - rank
+        - reasonCodes
+        - explanation
+      properties:
+        candidateId:
+          type: string
+          format: uuid
+        placeMealId:
+          type: string
+          format: uuid
+        mealId:
+          type: string
+          format: uuid
+        mealName:
+          type: string
+        placeId:
+          type: string
+          format: uuid
+        placeName:
+          type: string
+        area:
+          type: string
+        price:
+          $ref: '#/components/schemas/RecommendationMoney'
+        recommendationType:
+          type: string
+          enum:
+            - PERSONAL
+            - EXPLORATORY
+            - GROUP_INSPIRED
+        rank:
+          type: integer
+          minimum: 1
+          maximum: 3
+        reasonCodes:
+          type: array
+          items:
+            type: string
+            enum:
+              - CUISINE_MATCH
+              - WITHIN_BUDGET
+              - SPICE_MATCH
+              - NEARBY
+              - NOT_RECENTLY_REPEATED
+              - SIMILAR_USERS_LIKED
+              - SIMILAR_TO_LIKED_MEALS
+              - TRUSTED_GROUP_RATING
+              - WANT_TO_TRY
+        reasons:
+          type: array
+          items:
+            type: string
+          description: Backward-compatible alias for reasonCodes.
+        explanation:
+          type: string
+          description: Allow-listed grounded text. Model or fallback scores are never used as the explanation.
+    RecommendationResponse:
+      type: object
+      required:
+        - sessionId
+        - traceId
+        - status
+        - modelStatus
+        - fallbackStatus
+        - fallbackVersion
+        - items
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        traceId:
+          type: string
+        status:
+          type: string
+          enum:
+            - FALLBACK_SUCCEEDED
+            - NO_VALID_CANDIDATE
+        modelStatus:
+          type: string
+          example: NOT_REQUESTED
+        modelVersion:
+          type: string
+          nullable: true
+        fallbackStatus:
+          type: string
+          enum:
+            - SUCCEEDED
+            - NO_VALID_CANDIDATE
+        fallbackVersion:
+          type: string
+          example: fallback-v1
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/RecommendationCandidateResponse'
+        candidates:
+          type: array
+          maxItems: 3
+          description: Backward-compatible alias for items.
+          items:
+            $ref: '#/components/schemas/RecommendationCandidateResponse'
+    RecommendationSessionSummary:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+        fallbackStatus:
+          type: string
+        fallbackVersion:
+          type: string
+        returnedCandidateCount:
+          type: integer
+          minimum: 0
+          maximum: 3
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    RecommendationHistoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageResponse'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/RecommendationSessionSummary'
     WantToTrySourceType:
       type: string
       enum:
@@ -1845,6 +2086,100 @@ components:
           schema:
             $ref: '#/components/schemas/ApiErrorResponse'
 paths:
+  /recommendations/generate:
+    post:
+      tags:
+        - Recommendations
+      summary: Generate deterministic fallback recommendations.
+      description: Requires Idempotency-Key. The backend resolves preferences, history, Want to Try, active-group evidence, and curated candidates; clients cannot submit raw evidence. Try another is a client-only reveal of the existing ordered items and has no server mutation endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRecommendationRequest'
+      responses:
+        '201':
+          description: Recommendation session created or resolved from a matching idempotent retry.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /recommendations/{sessionId}:
+    get:
+      tags:
+        - Recommendations
+      summary: Read an owned recommendation session.
+      description: Owner-only read returning the same stable ordered candidates that were persisted at generation time.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Persisted recommendation result.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /recommendations/history:
+    get:
+      tags:
+        - Recommendations
+      summary: List owned recommendation sessions.
+      description: Returns only the authenticated user's sessions using bounded pagination and stable createdAt/id ordering.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Owned recommendation session page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationHistoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /want-to-try:
     post:
       tags:
