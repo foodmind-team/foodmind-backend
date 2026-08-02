@@ -3,6 +3,7 @@ package com.foodmind.foodmindbackend.cooking.domain;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -22,7 +23,9 @@ public record CookingPlanRequestContext(
         BigDecimal maxBudget,
         String currency,
         List<String> requiredDietaryTagCodes,
-        List<String> avoidAllergenCodes) {
+        List<String> avoidAllergenCodes,
+        OffsetDateTime servingAt,
+        String region) {
 
     private static final int MAX_INPUTS = 30;
     private static final int MAX_RECIPE_IDS = 25;
@@ -33,6 +36,7 @@ public record CookingPlanRequestContext(
         requiredDietaryTagCodes = normaliseCodes(requiredDietaryTagCodes);
         avoidAllergenCodes = normaliseCodes(avoidAllergenCodes);
         currency = currency == null ? null : currency.trim().toUpperCase(Locale.ROOT);
+        region = region == null || region.isBlank() ? "SG" : region.trim().toUpperCase(Locale.ROOT);
         validate(ingredients, recipeIds, servings, maxMinutes, maxBudget, currency);
     }
 

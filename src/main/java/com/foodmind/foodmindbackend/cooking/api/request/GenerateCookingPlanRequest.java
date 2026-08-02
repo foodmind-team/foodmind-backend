@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,7 +33,10 @@ public record GenerateCookingPlanRequest(
         @Size(min = 3, max = 3)
         String currency,
         List<String> requiredDietaryTagCodes,
-        List<String> avoidAllergenCodes) {
+        List<String> avoidAllergenCodes,
+        // Backward-compatible optional extensions for the agent-native contract.
+        OffsetDateTime servingAt,
+        String region) {
 
     public CookingPlanRequestContext toContext() {
         return new CookingPlanRequestContext(
@@ -43,6 +47,8 @@ public record GenerateCookingPlanRequest(
                 maxBudget,
                 currency,
                 requiredDietaryTagCodes,
-                avoidAllergenCodes);
+                avoidAllergenCodes,
+                servingAt,
+                region);
     }
 }

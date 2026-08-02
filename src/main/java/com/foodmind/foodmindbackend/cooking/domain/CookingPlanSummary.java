@@ -3,19 +3,13 @@ package com.foodmind.foodmindbackend.cooking.domain;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/**
- * @description:
- * @author: chenyaqi
- * @email: terrence.yaqi.chen@u.nus.edu
- * @date: 30/07/2026 12:10 pm
- */
-
+/** Lightweight history card for a cooking plan (agent-native statuses). */
 public record CookingPlanSummary(
         UUID planId,
         String status,
-        UUID sourceRecipeId,
-        int inputCount,
-        int stepCount,
+        int sourceCount,
+        int taskCount,
+        Integer makespanMinutes,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt) {
 }
