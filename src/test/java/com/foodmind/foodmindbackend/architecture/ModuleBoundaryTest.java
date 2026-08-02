@@ -24,6 +24,7 @@ class ModuleBoundaryTest {
             "user",
             "preference",
             "catalog",
+            "recipe",
             "record",
             "group",
             "wanttotry",

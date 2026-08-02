@@ -102,10 +102,19 @@ public class SecurityProperties {
     }
 
     public static class Web {
+        private boolean cookieSecure = true;
         private List<String> allowedOrigins = new ArrayList<>(List.of(
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:8080"));
+
+        public boolean isCookieSecure() {
+            return cookieSecure;
+        }
+
+        public void setCookieSecure(boolean cookieSecure) {
+            this.cookieSecure = cookieSecure;
+        }
 
         public List<String> getAllowedOrigins() {
             return allowedOrigins;

@@ -25,5 +25,8 @@ jobs:
       - name: Fix mvnw executable permission
         run: chmod +x mvnw
 
+      - name: Validate committed OpenAPI contract
+        run: python3 scripts/validate-openapi.py
+
       - name: Run all tests
         run: ./mvnw clean test

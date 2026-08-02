@@ -98,17 +98,17 @@ The design is based on:
 
 ### 2.3 Current implementation baseline
 
-- The repository contains one Spring Boot application class and one context
-  test plus the reviewed architecture/branch plans, the executable V1–V11
-  PostgreSQL schema pack, its database guide, and Postman hand-off assets.
-  Business modules, entities, runtime datasource/security configuration,
-  public OpenAPI implementation, and integrations do not yet exist.
+- The repository contains the Spring Boot runtime, executable V1–V13
+  PostgreSQL schema pack, public OpenAPI contract, authenticated business
+  modules, and integration ports. Owner-scoped recipe CRUD is implemented in
+  the V13 migration and is covered by application and Testcontainers flow
+  tests.
 - Spring Boot `4.1.0` and Java `17` are compatible according to the current
   Spring Boot system requirements.
-- The current Maven test reaches Spring Boot successfully but fails while
-  creating the application context because no datasource or test profile is
-  configured. Fixing the reproducible test database is the first engineering
-  task, not a later polish item.
+- The full Maven suite runs against clean Testcontainers PostgreSQL databases;
+  the current baseline is 111 tests with zero failures or errors. Remaining
+  release gates are cross-repository authenticated E2E and device-level
+  Android verification.
 
 ## 3. System architecture
 
@@ -190,6 +190,7 @@ classes. Cross-module calls go through a small application-facing interface.
 | `user` | Account profile, account status, timezone | none except common |
 | `preference` | Budget, cuisines, spice, dietary/allergy rules, meal types, area, goals, cleanliness priority | `user`, catalogue reference ports |
 | `catalog` | Meals, places, place offerings, products, recipes, ingredients, curated evidence, seed imports | common |
+| `recipe` | Owner-scoped user recipe CRUD and immutable input snapshots | `user`, common |
 | `record` | Food/drink CRUD, history, soft deletion, record media metadata, Meal Note projection | `user`, `catalog`, group permission port |
 | `group` | Trusted groups, invitations, membership lifecycle, feed, recommendation shares | `user`, record read port, recommendation share port |
 | `wanttotry` | User-owned saved references and live source-authorisation checks | catalogue/record reference ports |

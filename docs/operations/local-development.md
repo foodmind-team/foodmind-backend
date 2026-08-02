@@ -39,9 +39,18 @@ AGENT_SERVICE_BASE_URL=http://localhost:8001
 AGENT_SERVICE_TOKEN=<local-only-token>
 INFERENCE_SERVICE_BASE_URL=http://localhost:8002
 INFERENCE_SERVICE_TOKEN=<local-only-token>
+# Only for plain-http local Web development; keep the production default true.
+WEB_COOKIE_SECURE=false
+# Comma-separated browser origins allowed to call the API with credentials.
+WEB_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
 ```
 
 Never commit the populated values.
+
+When the Web client runs on `http://localhost`, set `WEB_COOKIE_SECURE=false`
+in the local profile so the refresh cookie can be sent by the browser. The
+production default remains secure-only. `WEB_ALLOWED_ORIGINS` must list the
+exact Web dev origin(s); wildcard origins are not supported with credentials.
 
 ## Recommended Startup Order
 
@@ -107,7 +116,7 @@ Run the application:
 
 ## Expected Local URLs
 
-These are conventions to implement, not evidence of current availability:
+These are the expected local endpoints after the backend profile is started:
 
 | Service | URL |
 | --- | --- |

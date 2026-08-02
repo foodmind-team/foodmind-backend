@@ -2,11 +2,10 @@
 
 FoodMind Backend is the only public business API and the system of record for the FoodMind platform. Android and Web clients communicate with this service; they must never call the Agent or model-inference services directly.
 
-> **Current status:** documentation-first backend hand-off. The reviewed V1–V11
-> PostgreSQL/Flyway scripts, architecture and branch plans, and importable
-> Postman package are present. Java business modules, runtime/database
-> configuration, public OpenAPI, security wiring, and service integrations are
-> intentionally left for implementation through the ordered branch roadmap.
+> **Current status:** the Spring Boot runtime, PostgreSQL/Flyway migrations,
+> public OpenAPI, security wiring, and the core client-facing modules are
+> implemented. The remaining release gates are provider/consumer generation,
+> cross-repository authenticated E2E, and device-level Android verification.
 
 ## Responsibilities
 
@@ -127,6 +126,7 @@ foodmind-backend/
 | `user` | Account identity and user-owned profile data |
 | `preference` | Budget, cuisine, spice, dietary, location, and cleanliness preferences |
 | `catalog` | Meal, Place, Food Product, and Recipe reference data |
+| `recipe` | Authenticated user-owned recipe CRUD, optimistic versions, and soft deletion |
 | `record` | FoodRecord, DrinkRecord, history, ratings, and visibility |
 | `group` | Trusted groups, invitations, memberships, roles, and feeds |
 | `wanttotry` | Saved authorised references the user wants to try |
@@ -181,6 +181,17 @@ Every internal call must define:
 
 ## Local Development
 
+Validate the committed public contract without downloading tooling:
+
+```bash
+python3 scripts/validate-openapi.py
+```
+
+The contract was also smoke-generated with OpenAPI Generator 7.24.0 into a
+temporary directory using `typescript-fetch` and Kotlin `jvm-retrofit2`, and with
+Orval 7.13.2 using `fetch`; the generated TypeScript compiled independently.
+Generated clients are disposable and must not be imported directly by UI code.
+
 Prerequisites:
 
 - Java 17
@@ -200,7 +211,9 @@ Typical commands:
 ./mvnw spring-boot:run
 ```
 
-The repository does not yet include a complete local profile or database configuration. Follow [local-development.md](docs/operations/local-development.md) when those files are introduced.
+Use the committed `compose.yaml` PostgreSQL service and
+[local-development.md](docs/operations/local-development.md) for the local
+profile, database, and client startup contract.
 
 ## Configuration Contract
 

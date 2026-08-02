@@ -59,11 +59,11 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
 
         assertThat(migrations)
                 .extracting(migration -> migration.getVersion().getVersion())
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
         assertThat(migrations)
                 .extracting(MigrationInfo::getState)
                 .containsOnly(MigrationState.SUCCESS);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
     }
 
     @Test
@@ -74,7 +74,7 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
                 WHERE table_schema = 'public'
                   AND table_type = 'BASE TABLE'
                   AND table_name <> 'flyway_schema_history'
-                """)).isEqualTo(48);
+                """)).isEqualTo(49);
         assertThat(count("""
                 SELECT count(*)
                 FROM information_schema.views

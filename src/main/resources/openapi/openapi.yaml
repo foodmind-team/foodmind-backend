@@ -1976,15 +1976,19 @@ components:
     GenerateCookingPlanRequest:
       type: object
       required:
-        - ingredients
         - servings
       properties:
         ingredients:
           type: array
-          minItems: 1
           maxItems: 30
           items:
             $ref: '#/components/schemas/CookingIngredientRequest'
+        recipeIds:
+          type: array
+          maxItems: 25
+          items:
+            type: string
+            format: uuid
         servings:
           type: integer
           minimum: 1
@@ -2179,6 +2183,100 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/CookingPlanSummary'
+    UserRecipeRequest:
+      type: object
+      required: [name, servings, ingredients, steps]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        servings:
+          type: integer
+          minimum: 1
+          maximum: 50
+        imageUrl:
+          type: string
+          maxLength: 2048
+          nullable: true
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 80
+        allergenHints:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 80
+        ingredients:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1000
+    UserRecipeResponse:
+      type: object
+      required: [id, name, servings, tags, allergenHints, ingredients, steps, createdAt, updatedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        servings:
+          type: integer
+          minimum: 1
+          maximum: 50
+        imageUrl:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items: { type: string }
+        allergenHints:
+          type: array
+          items: { type: string }
+        ingredients:
+          type: array
+          items: { type: string }
+        steps:
+          type: array
+          items: { type: string }
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    UserRecipePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageResponse'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserRecipeResponse'
     WantToTrySourceType:
       type: string
       enum:
@@ -3124,7 +3222,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: '#/components/schemas/ApiErrorResponse'
     get:
       tags:
         - Chat
@@ -3165,6 +3263,7 @@ paths:
     post:
       tags:
         - Cooking Plans
+      operationId: generateCookingPlan
       summary: Generate a controlled cooking plan.
       description: Requires Idempotency-Key. The backend persists the request, resolves hard dietary/allergy rules, sends only active controlled recipe candidates to the Cooking Agent outside a database transaction, validates the structured result, and stores an immutable output snapshot.
       security:
@@ -3203,6 +3302,7 @@ paths:
     get:
       tags:
         - Cooking Plans
+      operationId: getCookingPlan
       summary: Read an owned cooking plan.
       description: Owner-only read returning immutable request and output snapshots.
       security:
@@ -3233,6 +3333,7 @@ paths:
     get:
       tags:
         - Cooking Plans
+      operationId: listCookingPlanHistory
       summary: List owned cooking plans.
       description: Returns only the authenticated user's plans using bounded pagination and stable createdAt/id ordering.
       security:
@@ -3253,6 +3354,175 @@ paths:
                 $ref: '#/components/schemas/CookingPlanHistoryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /recipes:
+    get:
+      tags:
+        - Recipes
+      operationId: listUserRecipes
+      summary: List the authenticated user's recipes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Owner-scoped recipe page.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecipePageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Recipes
+      operationId: createUserRecipe
+      summary: Create an owned recipe.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRecipeRequest'
+      responses:
+        '201':
+          description: Created recipe.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecipeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /recipes/{id}:
+    get:
+      tags:
+        - Recipes
+      operationId: getUserRecipe
+      summary: Read an owned recipe.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Owned recipe detail.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: Current optimistic-lock version.
+              schema:
+                type: string
+                example: '"0"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecipeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - Recipes
+      operationId: updateUserRecipe
+      summary: Update an owned recipe with optimistic locking.
+      description: Requires If-Match with the current numeric version. Non-owners receive a non-disclosing 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '"0"'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRecipeRequest'
+      responses:
+        '200':
+          description: Updated recipe.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            ETag:
+              description: New optimistic-lock version.
+              schema:
+                type: string
+                example: '"1"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecipeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - Recipes
+      operationId: deleteUserRecipe
+      summary: Soft-delete an owned recipe.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Recipe deleted or already absent for this owner.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /recommendations/generate:
     post:
       tags:

@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * @description:
@@ -17,8 +18,9 @@ import java.util.List;
  */
 
 public record GenerateCookingPlanRequest(
-        @Size(min = 1, max = 30)
+        @Size(max = 30)
         List<@Valid CookingIngredientRequest> ingredients,
+        List<UUID> recipeIds,
         @Min(1)
         @Max(24)
         int servings,
@@ -35,6 +37,7 @@ public record GenerateCookingPlanRequest(
     public CookingPlanRequestContext toContext() {
         return new CookingPlanRequestContext(
                 ingredients == null ? List.of() : ingredients.stream().map(CookingIngredientRequest::toDomain).toList(),
+                recipeIds,
                 servings,
                 maxMinutes,
                 maxBudget,

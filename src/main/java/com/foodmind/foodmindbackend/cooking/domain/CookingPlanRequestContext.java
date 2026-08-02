@@ -5,6 +5,7 @@ import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * @description:
@@ -15,6 +16,7 @@ import java.util.Locale;
 
 public record CookingPlanRequestContext(
         List<CookingPlanInput> ingredients,
+        List<UUID> recipeIds,
         int servings,
         Integer maxMinutes,
         BigDecimal maxBudget,
@@ -23,13 +25,15 @@ public record CookingPlanRequestContext(
         List<String> avoidAllergenCodes) {
 
     private static final int MAX_INPUTS = 30;
+    private static final int MAX_RECIPE_IDS = 25;
 
     public CookingPlanRequestContext {
         ingredients = ingredients == null ? List.of() : List.copyOf(ingredients);
+        recipeIds = recipeIds == null ? List.of() : recipeIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
         requiredDietaryTagCodes = normaliseCodes(requiredDietaryTagCodes);
         avoidAllergenCodes = normaliseCodes(avoidAllergenCodes);
         currency = currency == null ? null : currency.trim().toUpperCase(Locale.ROOT);
-        validate(ingredients, servings, maxMinutes, maxBudget, currency);
+        validate(ingredients, recipeIds, servings, maxMinutes, maxBudget, currency);
     }
 
     private static List<String> normaliseCodes(List<String> values) {
@@ -46,12 +50,13 @@ public record CookingPlanRequestContext(
 
     private static void validate(
             List<CookingPlanInput> ingredients,
+            List<UUID> recipeIds,
             int servings,
             Integer maxMinutes,
             BigDecimal maxBudget,
             String currency) {
-        if (ingredients.isEmpty() || ingredients.size() > MAX_INPUTS) {
-            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Provide between 1 and 30 ordered ingredients.");
+        if ((ingredients.isEmpty() && recipeIds.isEmpty()) || ingredients.size() > MAX_INPUTS || recipeIds.size() > MAX_RECIPE_IDS) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Provide ingredients or select at least one saved recipe.");
         }
         for (CookingPlanInput ingredient : ingredients) {
             if (ingredient.ingredientName() == null || ingredient.ingredientName().isBlank()
