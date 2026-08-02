@@ -1,16 +1,13 @@
 package com.foodmind.foodmindbackend.cooking.application.port;
 
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentCommand;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentGenerationResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
 
 /**
- * @description:
- * @author: chenyaqi
- * @email: terrence.yaqi.chen@u.nus.edu
- * @date: 30/07/2026 12:10 pm
+ * Port for invoking the cooking-plan agent over its native internal contract
+ * ({@code POST /internal/v1/agents/cooking-plan/generate}, X-Internal-Token).
  */
-
 public interface CookingAgentPort {
 
-    CookingAgentGenerationResult generate(CookingAgentCommand command);
+    CookingAgentResult generate(AgentGeneratePlanRequest request);
 }

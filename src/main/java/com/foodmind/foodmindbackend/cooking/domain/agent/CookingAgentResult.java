@@ -22,7 +22,7 @@ public record CookingAgentResult(
         return new CookingAgentResult(null, code, rawResponseJson);
     }
 
-    public static CookingAgentResult failed(AgentFailedPlanResponse response, String rawResponseJson) {
-        return new CookingAgentResult(response, CookingAgentFailureCode.AGENT_INTERNAL_ERROR, rawResponseJson);
+    public static CookingAgentResult failed(AgentFailedPlanResponse response, CookingAgentFailureCode code, String rawResponseJson) {
+        return new CookingAgentResult(response, code, rawResponseJson);
     }
 }

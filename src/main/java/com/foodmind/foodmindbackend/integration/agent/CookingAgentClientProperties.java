@@ -15,12 +15,12 @@ public class CookingAgentClientProperties {
 
     private boolean enabled;
     private String baseUrl = "http://127.0.0.1:65535";
-    private String endpointPath = "/internal/v1/cooking-plans/generate";
+    private String endpointPath = "/internal/v1/agents/cooking-plan/generate";
     private String serviceToken = "";
-    private String contractVersion = "cooking-agent-v1";
     private Duration connectTimeout = Duration.ofMillis(250);
-    private Duration readTimeout = Duration.ofMillis(800);
-    private int maxResponseBytes = 16384;
+    private Duration readTimeout = Duration.ofSeconds(30);
+    private int maxResponseBytes = 1_048_576;
+    private String region = "SG";
 
     public boolean isEnabled() {
         return enabled;
@@ -54,14 +54,6 @@ public class CookingAgentClientProperties {
         this.serviceToken = serviceToken;
     }
 
-    public String getContractVersion() {
-        return contractVersion;
-    }
-
-    public void setContractVersion(String contractVersion) {
-        this.contractVersion = contractVersion;
-    }
-
     public Duration getConnectTimeout() {
         return connectTimeout;
     }
@@ -84,5 +76,13 @@ public class CookingAgentClientProperties {
 
     public void setMaxResponseBytes(int maxResponseBytes) {
         this.maxResponseBytes = maxResponseBytes;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
     }
 }
