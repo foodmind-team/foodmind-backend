@@ -21,6 +21,9 @@ import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * @description:
@@ -33,11 +36,14 @@ import org.springframework.stereotype.Repository;
 public class JdbcCookingContextQuery implements CookingContextQuery {
 
     private static final int MAX_CANDIDATES = 25;
+    private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public JdbcCookingContextQuery(NamedParameterJdbcTemplate jdbcTemplate) {
+    public JdbcCookingContextQuery(NamedParameterJdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -49,7 +55,10 @@ public class JdbcCookingContextQuery implements CookingContextQuery {
     public List<RecipeCandidate> controlledCandidates(
             UUID userId,
             CookingPlanRequestContext request,
-            CookingPreferenceRules mergedRules) {
+        CookingPreferenceRules mergedRules) {
+        if (!request.recipeIds().isEmpty()) {
+            return selectedOwnerCandidates(userId, request, mergedRules);
+        }
         List<RecipeHeader> headers = jdbcTemplate.query("""
                 SELECT r.id,
                        r.name,
@@ -89,7 +98,40 @@ public class JdbcCookingContextQuery implements CookingContextQuery {
                 .toList();
     }
 
+    private List<RecipeCandidate> selectedOwnerCandidates(
+            UUID userId,
+            CookingPlanRequestContext request,
+            CookingPreferenceRules mergedRules) {
+        List<OwnerRecipeHeader> recipes = jdbcTemplate.query("""
+                SELECT id, name, servings, tags_json, allergen_hints_json, ingredients_json, steps_json
+                FROM user_recipe
+                WHERE owner_user_id = :owner AND deleted_at IS NULL AND id IN (:recipeIds)
+                ORDER BY updated_at DESC, id DESC
+                LIMIT :limit
+                """,
+                new MapSqlParameterSource()
+                        .addValue("owner", userId)
+                        .addValue("recipeIds", request.recipeIds())
+                        .addValue("limit", MAX_CANDIDATES),
+                (rs, rowNum) -> new OwnerRecipeHeader(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("name"),
+                        rs.getInt("servings"),
+                        parse(rs.getString("tags_json")),
+                        parse(rs.getString("allergen_hints_json")),
+                        parse(rs.getString("ingredients_json")),
+                        parse(rs.getString("steps_json"))));
+        return recipes.stream()
+                .map(OwnerRecipeHeader::toCandidate)
+                .filter(candidate -> compatible(candidate, request, mergedRules, false))
+                .toList();
+    }
+
     private boolean compatible(RecipeCandidate candidate, CookingPlanRequestContext request, CookingPreferenceRules rules) {
+        return compatible(candidate, request, rules, true);
+    }
+
+    private boolean compatible(RecipeCandidate candidate, CookingPlanRequestContext request, CookingPreferenceRules rules, boolean requireIngredientOverlap) {
         if (request.maxMinutes() != null && candidate.totalMinutes() > request.maxMinutes()) {
             return false;
         }
@@ -110,7 +152,7 @@ public class JdbcCookingContextQuery implements CookingContextQuery {
         if (candidate.allergenCodes().stream().anyMatch(rules.avoidAllergenCodes()::contains)) {
             return false;
         }
-        return ingredientOverlap(candidate, request.ingredients());
+        return !requireIngredientOverlap || ingredientOverlap(candidate, request.ingredients());
     }
 
     private boolean ingredientOverlap(RecipeCandidate candidate, List<CookingPlanInput> inputs) {
@@ -235,6 +277,14 @@ public class JdbcCookingContextQuery implements CookingContextQuery {
         return value == null ? null : value.trim();
     }
 
+    private List<String> parse(String value) {
+        try {
+            return objectMapper.readValue(value, STRING_LIST);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("Invalid owner recipe JSON", exception);
+        }
+    }
+
     private record RecipeHeader(
             UUID id,
             String name,
@@ -259,6 +309,31 @@ public class JdbcCookingContextQuery implements CookingContextQuery {
                     allergenCodes,
                     ingredients,
                     steps);
+        }
+    }
+
+    private record OwnerRecipeHeader(
+            UUID id,
+            String name,
+            int servings,
+            List<String> dietaryCodes,
+            List<String> allergenCodes,
+            List<String> ingredientNames,
+            List<String> instructions) {
+
+        RecipeCandidate toCandidate() {
+            List<RecipeIngredientSnapshot> ingredients = new ArrayList<>();
+            for (int index = 0; index < ingredientNames.size(); index++) {
+                ingredients.add(new RecipeIngredientSnapshot(index + 1, ingredientNames.get(index), null, null, false));
+            }
+            List<RecipeStepSnapshot> steps = new ArrayList<>();
+            for (int index = 0; index < instructions.size(); index++) {
+                steps.add(new RecipeStepSnapshot(index + 1, instructions.get(index)));
+            }
+            // Owner recipes do not currently store timing/cost metadata; one minute is
+            // the smallest valid agent value and keeps the snapshot explicit about the gap.
+            return new RecipeCandidate(id, name, "Owner recipe", servings, 1, null, null,
+                    dietaryCodes, allergenCodes, ingredients, steps);
         }
     }
 }

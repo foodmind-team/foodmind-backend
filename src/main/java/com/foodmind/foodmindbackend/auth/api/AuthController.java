@@ -12,6 +12,7 @@ import com.foodmind.foodmindbackend.auth.application.RegisterUser;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
+import com.foodmind.foodmindbackend.common.security.SecurityProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.security.SecureRandom;
@@ -48,16 +49,19 @@ public class AuthController {
     private final LoginUser loginUser;
     private final RefreshSession refreshSession;
     private final LogoutSession logoutSession;
+    private final SecurityProperties securityProperties;
 
     public AuthController(
             RegisterUser registerUser,
             LoginUser loginUser,
             RefreshSession refreshSession,
-            LogoutSession logoutSession) {
+            LogoutSession logoutSession,
+            SecurityProperties securityProperties) {
         this.registerUser = registerUser;
         this.loginUser = loginUser;
         this.refreshSession = refreshSession;
         this.logoutSession = logoutSession;
+        this.securityProperties = securityProperties;
     }
 
     @PostMapping("/register")
@@ -137,7 +141,7 @@ public class AuthController {
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.SET_COOKIE, ResponseCookie.from(REFRESH_COOKIE, tokens.refreshToken())
                 .httpOnly(true)
-                .secure(true)
+                .secure(securityProperties.getWeb().isCookieSecure())
                 .sameSite("Strict")
                 .path("/api/v1/auth")
                 .maxAge(java.time.Duration.between(java.time.OffsetDateTime.now(), tokens.refreshTokenExpiresAt()))
@@ -145,7 +149,7 @@ public class AuthController {
                 .toString());
         headers.add(HttpHeaders.SET_COOKIE, ResponseCookie.from(CSRF_COOKIE, csrfToken)
                 .httpOnly(false)
-                .secure(true)
+                .secure(securityProperties.getWeb().isCookieSecure())
                 .sameSite("Strict")
                 .path("/api/v1/auth")
                 .maxAge(java.time.Duration.between(java.time.OffsetDateTime.now(), tokens.refreshTokenExpiresAt()))
@@ -158,7 +162,7 @@ public class AuthController {
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.SET_COOKIE, ResponseCookie.from(REFRESH_COOKIE, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(securityProperties.getWeb().isCookieSecure())
                 .sameSite("Strict")
                 .path("/api/v1/auth")
                 .maxAge(0)
@@ -166,7 +170,7 @@ public class AuthController {
                 .toString());
         headers.add(HttpHeaders.SET_COOKIE, ResponseCookie.from(CSRF_COOKIE, "")
                 .httpOnly(false)
-                .secure(true)
+                .secure(securityProperties.getWeb().isCookieSecure())
                 .sameSite("Strict")
                 .path("/api/v1/auth")
                 .maxAge(0)

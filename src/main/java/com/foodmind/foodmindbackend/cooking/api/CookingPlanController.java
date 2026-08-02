@@ -3,6 +3,7 @@ package com.foodmind.foodmindbackend.cooking.api;
 import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.cooking.api.request.GenerateCookingPlanRequest;
+import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest.QuestionAnswer;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanSummaryResponse;
 import com.foodmind.foodmindbackend.cooking.application.GenerateCookingPlan;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -60,6 +62,16 @@ public class CookingPlanController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @PathVariable UUID planId) {
         return CookingPlanResponse.from(getCookingPlan.handle(principal.id(), planId));
+    }
+
+    @PostMapping("/{planId}/decisions")
+    CookingPlanResponse submitDecisions(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody List<@Valid QuestionAnswer> answers) {
+        return CookingPlanResponse.from(generateCookingPlan.submitDecisions(
+                principal.id(), planId, answers, idempotencyKey));
     }
 
     @GetMapping("/history")

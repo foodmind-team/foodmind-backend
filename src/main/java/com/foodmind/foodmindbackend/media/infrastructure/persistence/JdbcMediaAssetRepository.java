@@ -30,8 +30,12 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
     @Override
     public void savePending(MediaAsset asset) {
         jdbcTemplate.update("""
-                        INSERT INTO media_asset (id, owner_user_id, object_key, content_type, byte_size, checksum_sha256, status)
-                        VALUES (:id, :ownerUserId, :objectKey, :contentType, :byteSize, :checksumSha256, 'PENDING')
+                        INSERT INTO media_asset (
+                            id, owner_user_id, object_key, content_type, byte_size, checksum_sha256, status, created_at
+                        )
+                        VALUES (
+                            :id, :ownerUserId, :objectKey, :contentType, :byteSize, :checksumSha256, 'PENDING', :createdAt
+                        )
                         """, parameters(asset));
     }
 
@@ -97,7 +101,8 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
     private MapSqlParameterSource parameters(MediaAsset asset) {
         return new MapSqlParameterSource().addValue("id", asset.id()).addValue("ownerUserId", asset.ownerUserId())
                 .addValue("objectKey", asset.objectKey()).addValue("contentType", asset.contentType())
-                .addValue("byteSize", asset.byteSize()).addValue("checksumSha256", asset.checksumSha256());
+                .addValue("byteSize", asset.byteSize()).addValue("checksumSha256", asset.checksumSha256())
+                .addValue("createdAt", asset.createdAt());
     }
 
     private MediaAsset mapAsset(java.sql.ResultSet rs) throws java.sql.SQLException {
