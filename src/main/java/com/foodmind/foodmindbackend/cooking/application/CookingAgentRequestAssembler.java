@@ -43,7 +43,7 @@ public class CookingAgentRequestAssembler {
         return new AgentGeneratePlanRequest(
                 sanitise(traceId),
                 userId.toString(),
-                recipes(candidates, request.servings()),
+                recipeInputs(candidates, request.servings()),
                 mergedRules.requiredDietaryTagCodes(),
                 mergedRules.avoidAllergenCodes(),
                 request.maxMinutes(),
@@ -58,7 +58,8 @@ public class CookingAgentRequestAssembler {
                 properties.getRegion());
     }
 
-    private List<AgentRecipeInput> recipes(List<RecipeCandidate> candidates, int servings) {
+    /** Renders each candidate as {@code recipes[].text}; also used as the persisted source snapshot. */
+    public List<AgentRecipeInput> recipeInputs(List<RecipeCandidate> candidates, int servings) {
         return candidates.stream()
                 .map(candidate -> new AgentRecipeInput(
                         candidate.recipeId().toString(),

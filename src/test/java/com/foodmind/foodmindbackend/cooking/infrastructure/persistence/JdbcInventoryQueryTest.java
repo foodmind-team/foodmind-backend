@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInventoryLotSnapshot;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -20,12 +21,13 @@ class JdbcInventoryQueryTest extends PostgreSqlContainerSupport {
     @Autowired
     private NamedParameterJdbcTemplate jdbcTemplate;
 
-    private final JdbcInventoryQuery query = new JdbcInventoryQuery(jdbcTemplate);
+    private JdbcInventoryQuery query;
 
     @BeforeEach
-    void clean() {
+    void setUp() {
         jdbcTemplate.update("TRUNCATE TABLE inventory_lot, inventory_item, app_user CASCADE",
                 new MapSqlParameterSource());
+        query = new JdbcInventoryQuery(jdbcTemplate);
     }
 
     @Test
@@ -78,8 +80,8 @@ class JdbcInventoryQueryTest extends PostgreSqlContainerSupport {
                 new MapSqlParameterSource("id", id)
                         .addValue("itemId", itemId)
                         .addValue("userId", userId)
-                        .addValue("onHand", onHand)
-                        .addValue("reserved", reserved)
+                        .addValue("onHand", new BigDecimal(onHand))
+                        .addValue("reserved", new BigDecimal(reserved))
                         .addValue("expiry", expiry));
         return id;
     }

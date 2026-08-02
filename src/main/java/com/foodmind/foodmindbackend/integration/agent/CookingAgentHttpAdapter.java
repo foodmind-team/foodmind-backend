@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -94,6 +95,14 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
                     : CookingAgentFailureCode.CONNECTION_ERROR;
             log(request, code, startedAt);
             return CookingAgentResult.failure(code, null);
+        } catch (RestClientException exception) {
+            // RestClient wraps read/extraction I/O failures (e.g. a socket timeout during
+            // content negotiation) in the generic exception type rather than ResourceAccessException.
+            CookingAgentFailureCode code = timeout(exception)
+                    ? CookingAgentFailureCode.TIMEOUT
+                    : CookingAgentFailureCode.CONNECTION_ERROR;
+            log(request, code, startedAt);
+            return CookingAgentResult.failure(code, null);
         } catch (JacksonException exception) {
             log(request, CookingAgentFailureCode.MALFORMED_JSON, startedAt);
             return CookingAgentResult.failure(CookingAgentFailureCode.MALFORMED_JSON, null);
@@ -103,7 +112,7 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
         }
     }
 
-    private boolean timeout(ResourceAccessException exception) {
+    private boolean timeout(Throwable exception) {
         Throwable current = exception;
         while (current != null) {
             if (current instanceof SocketTimeoutException) {

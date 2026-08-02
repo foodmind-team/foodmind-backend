@@ -222,8 +222,8 @@ class JdbcCookingPlanRepositoryTest extends PostgreSqlContainerSupport {
                 new MapSqlParameterSource("id", id)
                         .addValue("itemId", itemId)
                         .addValue("userId", userId)
-                        .addValue("onHand", onHand)
-                        .addValue("reserved", reserved)
+                        .addValue("onHand", new BigDecimal(onHand))
+                        .addValue("reserved", new BigDecimal(reserved))
                         .addValue("expiry", LocalDate.of(2026, 8, 10)));
         return id;
     }

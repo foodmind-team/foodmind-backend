@@ -3,7 +3,6 @@ package com.foodmind.foodmindbackend.cooking.application;
 import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
-import com.foodmind.foodmindbackend.common.observability.CorrelationIdFilter;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanResult;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary;
@@ -27,16 +26,11 @@ public class GetCookingPlan {
     }
 
     public CookingPlanResult handle(UUID userId, UUID planId) {
-        return planRepository.findOwned(userId, planId, traceId())
+        return planRepository.findOwned(userId, planId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
     public PageResponse<CookingPlanSummary> history(UUID userId, int page, int size) {
         return PageResponse.of(planRepository.findOwnedPage(userId, page, size), page, size, planRepository.countOwned(userId));
-    }
-
-    private String traceId() {
-        String current = CorrelationIdFilter.currentCorrelationId();
-        return current == null ? UUID.randomUUID().toString() : current;
     }
 }

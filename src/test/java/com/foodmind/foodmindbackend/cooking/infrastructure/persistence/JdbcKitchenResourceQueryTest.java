@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentKitchenResourceSnapshot;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,12 +20,13 @@ class JdbcKitchenResourceQueryTest extends PostgreSqlContainerSupport {
     @Autowired
     private NamedParameterJdbcTemplate jdbcTemplate;
 
-    private final JdbcKitchenResourceQuery query = new JdbcKitchenResourceQuery(jdbcTemplate);
+    private JdbcKitchenResourceQuery query;
 
     @BeforeEach
-    void clean() {
+    void setUp() {
         jdbcTemplate.update("TRUNCATE TABLE kitchen_resource, app_user CASCADE",
                 new MapSqlParameterSource());
+        query = new JdbcKitchenResourceQuery(jdbcTemplate);
     }
 
     @Test
@@ -39,12 +41,13 @@ class JdbcKitchenResourceQueryTest extends PostgreSqlContainerSupport {
         List<AgentKitchenResourceSnapshot> resources = query.resources(owner);
 
         assertThat(resources).hasSize(2);
-        AgentKitchenResourceSnapshot stove = resources.get(0);
-        assertThat(stove.resourceType()).isEqualTo("stove");
+        assertThat(resources).extracting(AgentKitchenResourceSnapshot::resourceType)
+                .containsExactly("oven", "stove");
+        AgentKitchenResourceSnapshot stove = resources.get(1);
         assertThat(stove.capacity()).isEqualByComparingTo("4");
         assertThat(stove.capabilities()).containsExactly("induction");
         assertThat(stove.available()).isTrue();
-        assertThat(resources.get(1).available()).isFalse();
+        assertThat(resources.get(0).available()).isFalse();
     }
 
     private UUID insertUser(String email) {
@@ -68,7 +71,7 @@ class JdbcKitchenResourceQueryTest extends PostgreSqlContainerSupport {
                         .addValue("userId", userId)
                         .addValue("type", type)
                         .addValue("name", type + " resource")
-                        .addValue("capacity", capacity)
+                        .addValue("capacity", capacity == null ? null : new BigDecimal(capacity))
                         .addValue("capacityUnit", capacityUnit)
                         .addValue("capabilities", capabilities.toArray(String[]::new))
                         .addValue("available", available));

@@ -201,6 +201,7 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = '55000', MESSAGE = 'cooking plans cannot be deleted';
     END IF;
     IF NEW.status <> 'PROCESSING'
+       AND OLD.status <> 'PROCESSING'
        AND OLD.status <> NEW.status THEN
         RAISE EXCEPTION USING
             ERRCODE = '55000',

@@ -1,25 +1,33 @@
 package com.foodmind.foodmindbackend.cooking;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentCommand;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentGenerationResult;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentIngredientResult;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentStepResult;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentWarningResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentCompletionItem;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationQuestion;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentDecision;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentDishCompletion;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentMiseEnPlaceItem;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentQuestionOption;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRepairOption;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTimelineTask;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
-import java.math.BigDecimal;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,22 +45,23 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 /**
- * @description:
- * @author: chenyaqi
- * @email: terrence.yaqi.chen@u.nus.edu
- * @date: 30/07/2026 12:10 pm
+ * End-to-end cooking-plan flow against the agent-native contract: submit ->
+ * PROCESSING -> one of the four terminal states persisted -> GET read-back,
+ * plus idempotent replay and ownership isolation.
  */
-
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class CookingPlanFlowTest extends PostgreSqlContainerSupport {
 
-    private static final AtomicReference<Function<CookingAgentCommand, CookingAgentGenerationResult>> AGENT_RESPONSE =
-            new AtomicReference<>(CookingPlanFlowTest::successfulAgentResult);
+    private static final AtomicReference<Function<AgentGeneratePlanRequest, CookingAgentResult>> AGENT_RESPONSE =
+            new AtomicReference<>(CookingPlanFlowTest::readyAgentResult);
     private static final AtomicBoolean REMOTE_CALL_OBSERVED_TRANSACTION = new AtomicBoolean(true);
+    private static final AtomicInteger AGENT_CALL_COUNT = new AtomicInteger();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @Autowired
     private MockMvc mockMvc;
@@ -65,12 +74,13 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         jdbcTemplate.execute("""
                 TRUNCATE TABLE idempotency_record, cooking_plan, auth_session, app_user CASCADE
                 """);
-        AGENT_RESPONSE.set(CookingPlanFlowTest::successfulAgentResult);
+        AGENT_RESPONSE.set(CookingPlanFlowTest::readyAgentResult);
         REMOTE_CALL_OBSERVED_TRANSACTION.set(true);
+        AGENT_CALL_COUNT.set(0);
     }
 
     @Test
-    void generatePersistsValidatedPlanOutsideDatabaseTransactionAndReplaysIdempotently() throws Exception {
+    void generatePersistsReadyPlanOutsideTransactionAndReadsBackTimeline() throws Exception {
         String accessToken = read(register("cooking-success@example.test", "Cooking Success"), "$.accessToken");
 
         MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate")
@@ -79,39 +89,142 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(tofuRequest()))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.sourceRecipeId").value("30000000-0000-4000-8000-000000000001"))
-                .andExpect(jsonPath("$.fallbackStatus").value("NOT_REQUIRED"))
-                .andExpect(jsonPath("$.inputs[0].ingredientName").value("Firm tofu"))
-                .andExpect(jsonPath("$.ingredients[0].availability").value("AVAILABLE"))
-                .andExpect(jsonPath("$.steps[0].stepNo").value(1))
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.solverStatus").value("OPTIMAL"))
+                .andExpect(jsonPath("$.makespanMinutes").value(54))
+                .andExpect(jsonPath("$.timeline[0].instruction").value("Pan-fry the tofu."))
+                .andExpect(jsonPath("$.completionChecklist[0].ingredientName").value("chilli"))
                 .andReturn();
 
-        String planId = read(result, "$.planId");
         assertThat(REMOTE_CALL_OBSERVED_TRANSACTION).isFalse();
-
-        mockMvc.perform(post("/api/v1/cooking-plans/generate")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
-                        .header("Idempotency-Key", "cook-success-key")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(tofuRequest()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.planId").value(planId));
-
-        Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
-        assertThat(planCount).isEqualTo(1);
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
+        String planId = read(result, "$.planId");
 
         mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planId").value(planId))
-                .andExpect(jsonPath("$.steps[1].instruction").value("Brown the tofu, then add broccoli and ginger."));
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.timeline[0].startMinute").value(0))
+                .andExpect(jsonPath("$.timeline[0].workMode").value("ACTIVE"))
+                .andExpect(jsonPath("$.miseEnPlace[0].operation").value("dice"))
+                .andExpect(jsonPath("$.dishCompletions[0].completionMinute").value(54));
 
         mockMvc.perform(get("/api/v1/cooking-plans/history")
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].planId").value(planId))
-                .andExpect(jsonPath("$.items[0].stepCount").value(2));
+                .andExpect(jsonPath("$.items[0].status").value("READY"))
+                .andExpect(jsonPath("$.items[0].sourceCount").isNumber())
+                .andExpect(jsonPath("$.items[0].taskCount").value(1));
+    }
+
+    @Test
+    void replayWithSameIdempotencyKeyReturnsSamePlanWithoutSecondAgentCall() throws Exception {
+        String accessToken = read(register("cooking-replay@example.test", "Cooking Replay"), "$.accessToken");
+
+        MvcResult first = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-replay-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String planId = read(first, "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-replay-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.planId").value(planId));
+
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
+        Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
+        assertThat(planCount).isEqualTo(1);
+    }
+
+    @Test
+    void needsConfirmationPersistsAndReadsBackQuestions() throws Exception {
+        AGENT_RESPONSE.set(request -> confirmationAgentResult(request));
+        String accessToken = read(register("cooking-confirm@example.test", "Cooking Confirm"), "$.accessToken");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-confirm-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andExpect(jsonPath("$.planRevision").value("req-c:v1"))
+                .andExpect(jsonPath("$.questions[0]").value("Would you like to proceed?"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].questionId").value("q-1"))
+                .andReturn();
+        String planId = read(result, "$.planId");
+
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andExpect(jsonPath("$.assumptions[0].text").value("assuming 200 C"))
+                .andExpect(jsonPath("$.repairOptions[0].optionId").value("opt-1"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].options[0].value").value("accept"))
+                .andExpect(jsonPath("$.decisions[0].optionId").value("opt-1"));
+    }
+
+    @Test
+    void infeasiblePersistsAndReadsBackReasons() throws Exception {
+        AGENT_RESPONSE.set(request -> {
+            AgentInfeasiblePlanResponse infeasible = new AgentInfeasiblePlanResponse(request.requestId(), "INFEASIBLE",
+                    List.of("Insufficient 'chilli': need 60 g, have 30 g"), List.of("Use dried chilli"));
+            return CookingAgentResult.of(infeasible, json(infeasible));
+        });
+        String accessToken = read(register("cooking-infeasible@example.test", "Cooking Infeasible"), "$.accessToken");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-infeasible-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("INFEASIBLE"))
+                .andExpect(jsonPath("$.reasons[0]").value("Insufficient 'chilli': need 60 g, have 30 g"))
+                .andReturn();
+        String planId = read(result, "$.planId");
+
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("INFEASIBLE"))
+                .andExpect(jsonPath("$.safeAlternatives[0]").value("Use dried chilli"));
+    }
+
+    @Test
+    void businessFailedPersistsAndReadsBackError() throws Exception {
+        AGENT_RESPONSE.set(request -> new CookingAgentResult(
+                new AgentFailedPlanResponse("FAILED", "SCHEDULE_UNKNOWN", "c-1", "timeout"),
+                CookingAgentFailureCode.SCHEDULE_UNKNOWN, null));
+        String accessToken = read(register("cooking-failed@example.test", "Cooking Failed"), "$.accessToken");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-failed-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.errorCode").value("SCHEDULE_UNKNOWN"))
+                .andExpect(jsonPath("$.errorMessage").value("timeout"))
+                .andReturn();
+        String planId = read(result, "$.planId");
+
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.errorCode").value("SCHEDULE_UNKNOWN"))
+                .andExpect(jsonPath("$.errorMessage").value("timeout"));
     }
 
     @Test
@@ -132,7 +245,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
-    void noControlledRecipeMatchPersistsSafeTerminalState() throws Exception {
+    void noControlledRecipeMatchRejectsWithValidationError() throws Exception {
         String accessToken = read(register("cooking-nomatch@example.test", "Cooking Nomatch"), "$.accessToken");
 
         mockMvc.perform(post("/api/v1/cooking-plans/generate")
@@ -140,45 +253,9 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                         .header("Idempotency-Key", "cook-nomatch-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(noMatchRequest()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("NO_VALID_RECIPE"))
-                .andExpect(jsonPath("$.fallbackStatus").value("NO_VALID_RECIPE"))
-                .andExpect(jsonPath("$.failureCode").value("NO_RECIPE_MATCH"))
-                .andExpect(jsonPath("$.steps").isArray())
-                .andExpect(jsonPath("$.steps.length()").value(0));
-    }
-
-    @Test
-    void invalidAgentRecipeIsRejectedWithoutRawText() throws Exception {
-        AGENT_RESPONSE.set(command -> CookingAgentGenerationResult.success(
-                command.contractVersion(),
-                command.requestId(),
-                command.planId(),
-                command.traceId(),
-                "agent-trace-invalid-recipe",
-                UUID.fromString("39999999-0000-4000-8000-000000000999"),
-                2,
-                35,
-                new BigDecimal("9.50"),
-                "SGD",
-                List.of(new CookingAgentIngredientResult(1, "Raw upstream invalid ingredient", null, null, "AVAILABLE")),
-                List.of(new CookingAgentStepResult(1, "Raw upstream invalid step.")),
-                List.of()));
-        String accessToken = read(register("cooking-invalid@example.test", "Cooking Invalid"), "$.accessToken");
-
-        MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
-                        .header("Idempotency-Key", "cook-invalid-key")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(tofuRequest()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("FAILED"))
-                .andExpect(jsonPath("$.failureCode").value("UNKNOWN_RECIPE"))
-                .andExpect(jsonPath("$.ingredients.length()").value(0))
-                .andExpect(jsonPath("$.steps.length()").value(0))
-                .andReturn();
-
-        assertThat(result.getResponse().getContentAsString()).doesNotContain("Raw upstream");
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Select at least one saved recipe."));
     }
 
     @Test
@@ -201,26 +278,40 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
     }
 
-    private static CookingAgentGenerationResult successfulAgentResult(CookingAgentCommand command) {
-        UUID recipeId = command.candidates().get(0).recipeId();
-        return CookingAgentGenerationResult.success(
-                command.contractVersion(),
-                command.requestId(),
-                command.planId(),
-                command.traceId(),
-                "agent-trace-cooking-success",
-                recipeId,
-                2,
-                35,
-                new BigDecimal("9.50"),
-                "SGD",
-                List.of(
-                        new CookingAgentIngredientResult(1, "Firm tofu", new BigDecimal("300"), "g", "AVAILABLE"),
-                        new CookingAgentIngredientResult(2, "Broccoli", new BigDecimal("180"), "g", "TO_BUY")),
-                List.of(
-                        new CookingAgentStepResult(1, "Cook the jasmine rice according to its package directions."),
-                        new CookingAgentStepResult(2, "Brown the tofu, then add broccoli and ginger.")),
-                List.of(new CookingAgentWarningResult(1, "BUDGET_ESTIMATE_ONLY", "Costs are an estimate, not a live price.")));
+    private static CookingAgentResult readyAgentResult(AgentGeneratePlanRequest request) {
+        AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
+                request.requestId(), "READY", "OPTIMAL", 54,
+                List.of(new AgentTimelineTask("t-1", 0, 6, 6, "Pan-fry the tofu.", "d-1", "ACTIVE",
+                        "preparation", "MEDIUM", List.of("stove"), null, null)),
+                List.of(new AgentCompletionItem("c-1", "chilli", List.of("d-1"), List.of())),
+                List.of(new AgentMiseEnPlaceItem("dice: chicken breast", "chicken breast", "dice", 6,
+                        List.of("knife"), "diced_chicken")),
+                List.of(new AgentDishCompletion("d-1", 54, 9, false)),
+                null, null, null);
+        return CookingAgentResult.of(ready, null);
+    }
+
+    private static CookingAgentResult confirmationAgentResult(AgentGeneratePlanRequest request) {
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                "req-c", "NEEDS_CONFIRMATION",
+                List.of(new com.foodmind.foodmindbackend.cooking.domain.agent.AgentAssumption(
+                        "assuming 200 C", new java.math.BigDecimal("0.82"), List.of())),
+                List.of(new AgentRepairOption("opt-1", "reduce_servings", "Reduce to 2 servings",
+                        List.of("servings 4 -> 2"), List.of("feasible"), "validated")),
+                List.of("Would you like to proceed?"),
+                List.of(new AgentConfirmationQuestion("q-1", "recipe.r-1.assumptions", "Accept?",
+                        "CHOICE", List.of(new AgentQuestionOption("accept", "Accept", true)), true, "200 C")),
+                List.of(new AgentDecision("opt-1", "reduce_servings", Map.of("servings", 2), "req-c:v1")),
+                "req-c:v1", null);
+        return CookingAgentResult.of(confirmation, json(confirmation));
+    }
+
+    private static String json(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (tools.jackson.core.JacksonException exception) {
+            throw new IllegalStateException("Failed to serialise test agent response.", exception);
+        }
     }
 
     private MvcResult register(String email, String displayName) throws Exception {
@@ -302,9 +393,10 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         @Bean
         @Primary
         CookingAgentPort cookingAgentPort() {
-            return command -> {
+            return request -> {
+                AGENT_CALL_COUNT.incrementAndGet();
                 REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
-                return AGENT_RESPONSE.get().apply(command);
+                return AGENT_RESPONSE.get().apply(request);
             };
         }
     }
