@@ -48,7 +48,9 @@ class CookingAgentRequestAssemblerTest {
         assertThat(agentRequest.recipes().get(0).recipeId()).isEqualTo(recipeId.toString());
         assertThat(agentRequest.recipes().get(0).text())
                 .contains("Tofu Bowl")
-                .contains("Firm tofu: 300 g")
+                .contains("Ingredients:")
+                .contains("300 g Firm tofu")
+                .contains("Steps:")
                 .contains("1. Pan-fry the tofu.");
         assertThat(agentRequest.recipes().get(0).targetServings()).isEqualByComparingTo("2");
         assertThat(agentRequest.dietaryRestrictions()).containsExactly("VEGAN");
