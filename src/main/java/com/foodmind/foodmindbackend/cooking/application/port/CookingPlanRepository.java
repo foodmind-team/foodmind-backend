@@ -1,45 +1,37 @@
 package com.foodmind.foodmindbackend.cooking.application.port;
 
-import com.foodmind.foodmindbackend.cooking.domain.CookingPlanRequestContext;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanResult;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary;
-import com.foodmind.foodmindbackend.cooking.domain.RecipeCandidate;
-import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentCommand;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
-import com.foodmind.foodmindbackend.cooking.domain.agent.ValidatedCookingAgentResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * @description:
- * @author: chenyaqi
- * @email: terrence.yaqi.chen@u.nus.edu
- * @date: 30/07/2026 12:10 pm
+ * Persists agent-native cooking plans (PROCESSING root, then one of the four
+ * terminal states with their materialised child tables) and reads them back.
  */
-
 public interface CookingPlanRepository {
 
-    CookingAgentCommand createProcessingPlan(
-            UUID userId,
-            CookingPlanRequestContext request,
-            Map<String, Object> requestSnapshot,
-            Map<String, Object> preferenceSnapshot,
-            List<RecipeCandidate> candidates,
-            String traceId,
-            UUID correlationId);
+    UUID createProcessing(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
+                          String traceId, String rawRequestJson);
 
-    void completePlan(UUID userId, UUID planId, ValidatedCookingAgentResult result);
+    void completeReady(UUID userId, UUID planId, AgentReadyPlanResponse response, String rawResponseJson);
 
-    void markFailed(
-            UUID userId,
-            UUID planId,
-            CookingAgentFailureCode failureCode,
-            String agentContractVersion,
-            String agentTraceId);
+    void completeConfirmation(UUID userId, UUID planId, AgentConfirmationPlanResponse response, String rawResponseJson);
 
-    Optional<CookingPlanResult> findOwned(UUID userId, UUID planId, String traceId);
+    void completeInfeasible(UUID userId, UUID planId, AgentInfeasiblePlanResponse response, String rawResponseJson);
+
+    void completeFailed(UUID userId, UUID planId, CookingAgentFailureCode code, AgentFailedPlanResponse response,
+                        String rawResponseJson);
+
+    Optional<CookingPlanResult> findOwned(UUID userId, UUID planId);
 
     List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size);
 
