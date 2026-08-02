@@ -236,6 +236,22 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
     }
 
     @Override
+    public Optional<String> findRequestContext(UUID userId, UUID planId) {
+        return jdbcTemplate.query("""
+                SELECT request_context
+                FROM cooking_plan
+                WHERE id = :planId
+                  AND user_id = :userId
+                """,
+                new MapSqlParameterSource()
+                        .addValue("planId", planId)
+                        .addValue("userId", userId),
+                (rs, rowNum) -> rs.getString("request_context"))
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size) {
         return jdbcTemplate.query("""
                 SELECT cp.id,

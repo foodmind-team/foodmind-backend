@@ -157,7 +157,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                         .content(tofuRequest()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
-                .andExpect(jsonPath("$.planRevision").value("req-c:v1"))
+                .andExpect(jsonPath("$.planRevision").value(org.hamcrest.Matchers.endsWith(":v1")))
                 .andExpect(jsonPath("$.questions[0]").value("Would you like to proceed?"))
                 .andExpect(jsonPath("$.confirmationQuestions[0].questionId").value("q-1"))
                 .andReturn();
@@ -171,6 +171,128 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.repairOptions[0].optionId").value("opt-1"))
                 .andExpect(jsonPath("$.confirmationQuestions[0].options[0].value").value("accept"))
                 .andExpect(jsonPath("$.decisions[0].optionId").value("opt-1"));
+    }
+
+    @Test
+    void confirmationResubmissionFlowSubmitsDecisionsAndGeneratesNewRevision() throws Exception {
+        AtomicReference<AgentGeneratePlanRequest> lastRequest = new AtomicReference<>();
+        AGENT_RESPONSE.set(request -> {
+            lastRequest.set(request);
+            if (request.planRevision() == null) {
+                return confirmationAgentResult(request);
+            }
+            return readyAgentResult(request);
+        });
+        String accessToken = read(register("cooking-decide@example.test", "Cooking Decide"), "$.accessToken");
+
+        MvcResult confirmation = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "decide-gen-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andReturn();
+        String confirmationPlanId = read(confirmation, "$.planId");
+        String revision = read(confirmation, "$.planRevision");
+
+        MvcResult decided = mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", confirmationPlanId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "decide-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [
+                                  { "questionId": "q-1", "value": "accept" },
+                                  { "questionId": "repair:opt-1", "value": "opt-1" }
+                                ]
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.planId").value(org.hamcrest.Matchers.not(confirmationPlanId)))
+                .andReturn();
+        String newPlanId = read(decided, "$.planId");
+
+        // The resubmission carried the incremented revision and the mapped decision.
+        assertThat(lastRequest.get().planRevision()).isEqualTo(revision.replace(":v1", ":v2"));
+        assertThat(lastRequest.get().approvedDecisions()).hasSize(1);
+        assertThat(lastRequest.get().approvedDecisions().get(0).optionId()).isEqualTo("opt-1");
+        assertThat(lastRequest.get().approvedDecisions().get(0).optionType()).isEqualTo("reduce_servings");
+        assertThat(lastRequest.get().approvedDecisions().get(0).planRevision())
+                .isEqualTo(revision.replace(":v1", ":v2"));
+
+        // The original confirmation plan is untouched; the new plan is readable.
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", confirmationPlanId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"));
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", newPlanId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"));
+
+        // Idempotent replay of the same decision key returns the same new plan without another agent call.
+        AGENT_CALL_COUNT.set(0);
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", confirmationPlanId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "decide-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [
+                                  { "questionId": "q-1", "value": "accept" },
+                                  { "questionId": "repair:opt-1", "value": "opt-1" }
+                                ]
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planId").value(newPlanId));
+        assertThat(AGENT_CALL_COUNT).hasValue(0);
+    }
+
+    @Test
+    void decisionsOnNonConfirmationPlanConflicts() throws Exception {
+        String accessToken = read(register("cooking-stale@example.test", "Cooking Stale"), "$.accessToken");
+        String planId = read(mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "stale-gen-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "stale-decide-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [ { "questionId": "q-1", "value": "accept" } ]
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+    }
+
+    @Test
+    void invalidDecisionsRejectedWithoutDirtyData() throws Exception {
+        AGENT_RESPONSE.set(request -> confirmationAgentResult(request));
+        String accessToken = read(register("cooking-bad@example.test", "Cooking Bad"), "$.accessToken");
+        String planId = read(mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "bad-gen-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "bad-decide-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [ { "questionId": "unknown-q", "value": "accept" } ]
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
+        assertThat(planCount).isEqualTo(1);
     }
 
     @Test
@@ -292,17 +414,25 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     private static CookingAgentResult confirmationAgentResult(AgentGeneratePlanRequest request) {
+        String revision = request.requestId() + ":v1";
         AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
-                "req-c", "NEEDS_CONFIRMATION",
+                request.requestId(), "NEEDS_CONFIRMATION",
                 List.of(new com.foodmind.foodmindbackend.cooking.domain.agent.AgentAssumption(
                         "assuming 200 C", new java.math.BigDecimal("0.82"), List.of())),
                 List.of(new AgentRepairOption("opt-1", "reduce_servings", "Reduce to 2 servings",
                         List.of("servings 4 -> 2"), List.of("feasible"), "validated")),
                 List.of("Would you like to proceed?"),
-                List.of(new AgentConfirmationQuestion("q-1", "recipe.r-1.assumptions", "Accept?",
-                        "CHOICE", List.of(new AgentQuestionOption("accept", "Accept", true)), true, "200 C")),
-                List.of(new AgentDecision("opt-1", "reduce_servings", Map.of("servings", 2), "req-c:v1")),
-                "req-c:v1", null);
+                List.of(
+                        new AgentConfirmationQuestion("q-1", "recipe.r-1.assumptions", "Accept?",
+                                "CHOICE", List.of(new AgentQuestionOption("accept", "Accept", true)), true, "200 C"),
+                        new AgentConfirmationQuestion("repair:opt-1", "repair_options",
+                                "Apply the repair option 'Reduce to 2 servings'?",
+                                "CHOICE",
+                                List.of(new AgentQuestionOption("opt-1", "Apply", true),
+                                        new AgentQuestionOption("__skip__", "Do not apply", false)),
+                                false, "opt-1")),
+                List.of(new AgentDecision("opt-1", "reduce_servings", Map.of("servings", 2), revision)),
+                revision, null);
         return CookingAgentResult.of(confirmation, json(confirmation));
     }
 

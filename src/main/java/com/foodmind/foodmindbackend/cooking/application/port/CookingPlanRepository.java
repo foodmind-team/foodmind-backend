@@ -33,6 +33,9 @@ public interface CookingPlanRepository {
 
     Optional<CookingPlanResult> findOwned(UUID userId, UUID planId);
 
+    /** The stored agent request JSON ({@code request_context}) of an owned plan. */
+    Optional<String> findRequestContext(UUID userId, UUID planId);
+
     List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size);
 
     long countOwned(UUID userId);
