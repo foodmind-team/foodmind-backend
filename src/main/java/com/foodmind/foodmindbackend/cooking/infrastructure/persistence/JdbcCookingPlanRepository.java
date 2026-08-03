@@ -18,6 +18,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -286,6 +287,123 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 new MapSqlParameterSource("userId", userId),
                 Long.class);
         return count == null ? 0 : count;
+    }
+
+    @Override
+    @Transactional
+    public void createGeneration(UUID planId, String taskId) {
+        jdbcTemplate.update("""
+                INSERT INTO cooking_plan_generation (
+                    plan_id, agent_task_id, sync_state, next_poll_at, attempt_count
+                )
+                VALUES (:planId, :taskId, 'PENDING', CURRENT_TIMESTAMP, 0)
+                """,
+                new MapSqlParameterSource()
+                        .addValue("planId", planId)
+                        .addValue("taskId", taskId));
+        jdbcTemplate.update("""
+                UPDATE cooking_plan
+                SET agent_task_id = :taskId
+                WHERE id = :planId
+                """,
+                new MapSqlParameterSource()
+                        .addValue("planId", planId)
+                        .addValue("taskId", taskId));
+    }
+
+    @Override
+    @Transactional
+    public List<GenerationClaim> claimDueGenerations(int batch, Duration pollInterval) {
+        return jdbcTemplate.query("""
+                UPDATE cooking_plan_generation g
+                SET sync_state = 'POLLING',
+                    next_poll_at = CURRENT_TIMESTAMP + make_interval(secs => :pollIntervalSeconds),
+                    attempt_count = attempt_count + 1
+                FROM (
+                    SELECT g2.plan_id
+                    FROM cooking_plan_generation g2
+                    JOIN cooking_plan cp ON cp.id = g2.plan_id
+                    WHERE g2.sync_state IN ('PENDING', 'POLLING')
+                      AND g2.next_poll_at <= CURRENT_TIMESTAMP
+                      AND cp.status = 'PROCESSING'
+                    ORDER BY g2.next_poll_at
+                    LIMIT :batch
+                    FOR UPDATE SKIP LOCKED
+                ) q
+                JOIN cooking_plan cp2 ON cp2.id = q.plan_id
+                WHERE g.plan_id = q.plan_id
+                RETURNING g.plan_id, cp2.user_id, g.agent_task_id, g.attempt_count
+                """,
+                new MapSqlParameterSource()
+                        .addValue("batch", batch)
+                        .addValue("pollIntervalSeconds", pollInterval.toSeconds()),
+                (rs, rowNum) -> new GenerationClaim(
+                        rs.getObject("plan_id", UUID.class),
+                        rs.getObject("user_id", UUID.class),
+                        rs.getString("agent_task_id"),
+                        rs.getInt("attempt_count")));
+    }
+
+    @Override
+    @Transactional
+    public void updateGenerationProgress(
+            UUID planId,
+            String node,
+            int completedSteps,
+            String message,
+            Duration nextDelay) {
+        jdbcTemplate.update("""
+                UPDATE cooking_plan_generation
+                SET sync_state = 'PENDING',
+                    last_progress_node = :node,
+                    last_progress_steps = :steps,
+                    last_progress_message = :message,
+                    next_poll_at = CURRENT_TIMESTAMP + make_interval(secs => :delaySeconds)
+                WHERE plan_id = :planId
+                """,
+                new MapSqlParameterSource()
+                        .addValue("planId", planId)
+                        .addValue("node", node)
+                        .addValue("steps", completedSteps)
+                        .addValue("message", message)
+                        .addValue("delaySeconds", nextDelay.toSeconds()));
+    }
+
+    @Override
+    @Transactional
+    public void completeGeneration(UUID planId, String syncState) {
+        jdbcTemplate.update("""
+                UPDATE cooking_plan_generation
+                SET sync_state = :syncState,
+                    next_poll_at = CURRENT_TIMESTAMP
+                WHERE plan_id = :planId
+                """,
+                new MapSqlParameterSource()
+                        .addValue("planId", planId)
+                        .addValue("syncState", syncState));
+    }
+
+    @Override
+    public Optional<GenerationRow> findGeneration(UUID planId) {
+        return jdbcTemplate.query("""
+                SELECT plan_id, agent_task_id, sync_state, next_poll_at, attempt_count,
+                       last_error_code, last_progress_node, last_progress_steps, last_progress_message
+                FROM cooking_plan_generation
+                WHERE plan_id = :planId
+                """,
+                new MapSqlParameterSource("planId", planId),
+                (rs, rowNum) -> new GenerationRow(
+                        rs.getObject("plan_id", UUID.class),
+                        rs.getString("agent_task_id"),
+                        rs.getString("sync_state"),
+                        rs.getObject("next_poll_at", OffsetDateTime.class),
+                        rs.getInt("attempt_count"),
+                        rs.getString("last_error_code"),
+                        rs.getString("last_progress_node"),
+                        rs.getInt("last_progress_steps"),
+                        rs.getString("last_progress_message")))
+                .stream()
+                .findFirst();
     }
 
     // =========================================================================

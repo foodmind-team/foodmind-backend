@@ -5,8 +5,13 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailureCodeMapper;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskProgress;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -21,6 +26,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -110,6 +116,133 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
             log(request, CookingAgentFailureCode.SCHEMA_MISMATCH, startedAt);
             return CookingAgentResult.failure(CookingAgentFailureCode.SCHEMA_MISMATCH, null);
         }
+    }
+
+    @Override
+    public AgentTaskSubmission submitTask(AgentGeneratePlanRequest request) {
+        if (!properties.isEnabled()) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.AGENT_DISABLED);
+        }
+        if (properties.getServiceToken() == null || properties.getServiceToken().isBlank()) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.CONFIGURATION_ERROR);
+        }
+        try {
+            byte[] body = restClient.post()
+                    .uri(properties.getTasksBasePath())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(INTERNAL_TOKEN_HEADER, properties.getServiceToken())
+                    .header(REQUEST_ID_HEADER, request.requestId())
+                    .body(request)
+                    .retrieve()
+                    .body(byte[].class);
+            String raw = requireBody(body);
+            return objectMapper.readValue(raw, AgentTaskSubmission.class);
+        } catch (RestClientResponseException exception) {
+            throw new CookingAgentTaskException(httpFailureCode(exception.getStatusCode().value()));
+        } catch (ResourceAccessException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (RestClientException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (JacksonException exception) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.MALFORMED_JSON);
+        } catch (IllegalArgumentException exception) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.SCHEMA_MISMATCH);
+        }
+    }
+
+    @Override
+    public AgentTaskSnapshot getTask(String taskId) {
+        try {
+            byte[] body = restClient.get()
+                    .uri(properties.getTasksBasePath() + "/" + taskId)
+                    .header(INTERNAL_TOKEN_HEADER, properties.getServiceToken())
+                    .retrieve()
+                    .body(byte[].class);
+            return parseTaskSnapshot(requireBody(body));
+        } catch (RestClientResponseException exception) {
+            throw new CookingAgentTaskException(httpFailureCode(exception.getStatusCode().value()));
+        } catch (ResourceAccessException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (RestClientException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        }
+    }
+
+    @Override
+    public AgentTaskSnapshot cancelTask(String taskId) {
+        try {
+            byte[] body = restClient.post()
+                    .uri(properties.getTasksBasePath() + "/" + taskId + "/cancel")
+                    .header(INTERNAL_TOKEN_HEADER, properties.getServiceToken())
+                    .retrieve()
+                    .body(byte[].class);
+            return parseTaskSnapshot(requireBody(body));
+        } catch (RestClientResponseException exception) {
+            throw new CookingAgentTaskException(httpFailureCode(exception.getStatusCode().value()));
+        } catch (ResourceAccessException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (RestClientException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        }
+    }
+
+    private CookingAgentFailureCode httpFailureCode(int status) {
+        return switch (status) {
+            case 401, 403 -> CookingAgentFailureCode.INVALID_INTERNAL_CREDENTIAL;
+            case 404 -> CookingAgentFailureCode.AGENT_TASK_NOT_FOUND;
+            case 409 -> CookingAgentFailureCode.CONSTRAINT_CONFLICT;
+            case 422 -> CookingAgentFailureCode.SCHEMA_MISMATCH;
+            case 503 -> CookingAgentFailureCode.OVERLOADED;
+            default -> CookingAgentFailureCode.NON_2XX;
+        };
+    }
+
+    private CookingAgentFailureCode accessFailureCode(Throwable exception) {
+        return timeout(exception)
+                ? CookingAgentFailureCode.TIMEOUT
+                : CookingAgentFailureCode.CONNECTION_ERROR;
+    }
+
+    private String requireBody(byte[] body) {
+        if (body == null || body.length > properties.getMaxResponseBytes()) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.OVERSIZED_RESPONSE);
+        }
+        return new String(body, StandardCharsets.UTF_8);
+    }
+
+    private AgentTaskSnapshot parseTaskSnapshot(String raw) {
+        try {
+            JsonNode root = objectMapper.readTree(raw);
+            AgentTaskStatus status = AgentTaskStatus.valueOf(root.path("status").asText());
+            JsonNode progressNode = root.get("progress");
+            AgentTaskProgress progress = progressNode == null || progressNode.isNull()
+                    ? null
+                    : objectMapper.treeToValue(progressNode, AgentTaskProgress.class);
+            return new AgentTaskSnapshot(
+                    text(root, "task_id"),
+                    status,
+                    text(root, "request_id"),
+                    text(root, "location"),
+                    progress,
+                    writeOrNull(root.get("result")),
+                    writeOrNull(root.get("error")));
+        } catch (JacksonException exception) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.MALFORMED_JSON);
+        } catch (IllegalArgumentException exception) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.SCHEMA_MISMATCH);
+        }
+    }
+
+    private static String text(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? null : value.asText();
+    }
+
+    private String writeOrNull(JsonNode node) throws JacksonException {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        return objectMapper.writeValueAsString(node);
     }
 
     private boolean timeout(Throwable exception) {

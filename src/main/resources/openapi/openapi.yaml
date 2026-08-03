@@ -2415,6 +2415,61 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/CookingPlanSummary'
+    CookingPlanAsyncAcceptedResponse:
+      type: object
+      required: [planId, status, taskId, location]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - PROCESSING
+            - READY
+            - NEEDS_CONFIRMATION
+            - INFEASIBLE
+            - FAILED
+        taskId:
+          type: string
+          example: task-0a1b2c3d
+        location:
+          type: string
+          example: /api/v1/cooking-plans/0a1b2c3d-4e5f-6789-abcd-ef0123456789/task
+    CookingPlanTaskProgressResponse:
+      type: object
+      required: [completedSteps]
+      properties:
+        node:
+          type: string
+          nullable: true
+          example: solve_schedule
+        completedSteps:
+          type: integer
+          minimum: 0
+          example: 7
+        message:
+          type: string
+          nullable: true
+          example: Solving schedule
+    CookingPlanTaskResponse:
+      type: object
+      required: [planId, taskId, status, syncState]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          example: task-0a1b2c3d
+        status:
+          type: string
+          enum: [PROCESSING]
+        syncState:
+          type: string
+          enum: [PENDING, POLLING]
+        progress:
+          $ref: '#/components/schemas/CookingPlanTaskProgressResponse'
     UserRecipeRequest:
       type: object
       required: [name, servings, ingredients, steps]
@@ -3635,6 +3690,118 @@ paths:
                 $ref: '#/components/schemas/CookingPlanHistoryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /cooking-plans/generate-async:
+    post:
+      tags:
+        - Cooking Plans
+      operationId: generateCookingPlanAsync
+      summary: Submit an async cooking-plan generation task.
+      description: Requires Idempotency-Key. Accepts the same request as /generate and returns 202 with a task handle; the background coordinator polls the agent task and materialises the terminal plan. If the submission itself fails, a terminal FAILED plan is returned with 200.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateCookingPlanRequest'
+      responses:
+        '202':
+          description: Task accepted; poll the task endpoint until it returns 404, then read the plan.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookingPlanAsyncAcceptedResponse'
+        '200':
+          description: Terminal FAILED plan returned because the task submission itself failed.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookingPlanResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /cooking-plans/{planId}/task:
+    get:
+      tags:
+        - Cooking Plans
+      operationId: getCookingPlanTask
+      summary: Read the async task handle of an in-flight cooking plan.
+      description: Returns 200 only while the plan is PROCESSING and a generation record exists; terminal plans return 404 (clients then poll GET /cooking-plans/{planId}).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: In-flight async task status and last mirrored progress.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookingPlanTaskResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cooking-plans/{planId}/cancel:
+    post:
+      tags:
+        - Cooking Plans
+      operationId: cancelCookingPlanTask
+      summary: Cancel an in-flight async cooking-plan task.
+      description: Cancels the agent task and materialises the plan as FAILED(TASK_CANCELLED). Conflicts (409) when the plan is not a PROCESSING async task.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The updated terminal plan (FAILED with TASK_CANCELLED).
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookingPlanResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /recipes:
     get:
       tags:

@@ -16,6 +16,7 @@ public class CookingAgentClientProperties {
     private boolean enabled;
     private String baseUrl = "http://127.0.0.1:65535";
     private String endpointPath = "/internal/v1/agents/cooking-plan/generate";
+    private String tasksBasePath = "/internal/v2/cooking-plan/tasks";
     private String serviceToken = "";
     private Duration connectTimeout = Duration.ofMillis(250);
     private Duration readTimeout = Duration.ofSeconds(30);
@@ -44,6 +45,14 @@ public class CookingAgentClientProperties {
 
     public void setEndpointPath(String endpointPath) {
         this.endpointPath = endpointPath;
+    }
+
+    public String getTasksBasePath() {
+        return tasksBasePath;
+    }
+
+    public void setTasksBasePath(String tasksBasePath) {
+        this.tasksBasePath = tasksBasePath;
     }
 
     public String getServiceToken() {

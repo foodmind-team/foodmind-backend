@@ -9,6 +9,8 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResp
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,4 +41,48 @@ public interface CookingPlanRepository {
     List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size);
 
     long countOwned(UUID userId);
+
+    // =========================================================================
+    // Async task polling (V15 cooking_plan_generation)
+    // =========================================================================
+
+    /**
+     * Records an async task submission: inserts the generation row (PENDING,
+     * due immediately) and back-fills {@code cooking_plan.agent_task_id}.
+     */
+    void createGeneration(UUID planId, String taskId);
+
+    /**
+     * Claims due generations via a single {@code FOR UPDATE SKIP LOCKED} UPDATE:
+     * moves them to POLLING, renews the lease and increments attempt_count.
+     * Returns the claimed rows including the owner user id.
+     */
+    List<GenerationClaim> claimDueGenerations(int batch, Duration pollInterval);
+
+    /**
+     * Mirrors task progress and re-arms the row for the next poll (sync_state back
+     * to PENDING, next_poll_at = now + delay). Used both for lease renewal of
+     * in-flight tasks and exponential backoff of polling failures.
+     */
+    void updateGenerationProgress(UUID planId, String node, int completedSteps, String message, Duration nextDelay);
+
+    /** Moves a generation row to a terminal sync_state (SUCCEEDED/FAILED/CANCELLED). */
+    void completeGeneration(UUID planId, String syncState);
+
+    Optional<GenerationRow> findGeneration(UUID planId);
+
+    record GenerationClaim(UUID planId, UUID userId, String taskId, int attemptCount) {
+    }
+
+    record GenerationRow(
+            UUID planId,
+            String taskId,
+            String syncState,
+            OffsetDateTime nextPollAt,
+            int attemptCount,
+            String lastErrorCode,
+            String lastProgressNode,
+            int lastProgressSteps,
+            String lastProgressMessage) {
+    }
 }
