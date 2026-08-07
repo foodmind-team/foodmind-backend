@@ -11,7 +11,7 @@ This document describes the target architecture. The repository currently contai
 1. **One public boundary:** only Spring Boot is reachable by user-facing clients.
 2. **Package by business capability:** domain modules own their application and persistence concerns.
 3. **Authorisation before retrieval:** no downstream service receives data that the user is not allowed to access.
-4. **Deterministic rules before AI:** ordinary validation, filtering, and permission checks remain normal Java code.
+4. **Deterministic（确定性的）rules before AI:** ordinary validation, filtering, and permission checks remain normal Java code.
 5. **Structured internal contracts:** Agent and inference results are schema-validated.
 6. **Persist evidence:** recommendations retain reason codes, model/fallback metadata, and trace IDs.
 7. **Fallback is a product feature:** internal-service failure must not make core record functionality unavailable.

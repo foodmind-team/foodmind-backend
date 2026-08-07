@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Local-FoodmindBackendApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="local" />
+    <envs>
+      <env name="SPRING_PROFILES_ACTIVE" value="local DB_URL=jdbc:postgresql://localhost:15432/foodmind DB_USERNAME=foodmind DB_PASSWORD=foodmind_local_password WEB_COOKIE_SECURE=false WEB_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 INTERNAL_SERVICE_TOKEN=local-development-service-token RECOMMENDATION_AGENT_ENABLED=true RECOMMENDATION_AGENT_BASE_URL=http://127.0.0.1:8001 RECOMMENDATION_AGENT_ENDPOINT_PATH=/internal/compat/v1/recommendations/generate RECOMMENDATION_AGENT_SERVICE_TOKEN=local-development-token RECOMMENDATION_AGENT_READ_TIMEOUT=2s COOKING_AGENT_ENABLED=true COOKING_AGENT_BASE_URL=http://127.0.0.1:8003 COOKING_AGENT_SERVICE_TOKEN=local-cooking-token COOKING_AGENT_REGION=SG" />
+    </envs>
+    <module name="foodmind-backend" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.foodmind.foodmindbackend.FoodmindBackendApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
