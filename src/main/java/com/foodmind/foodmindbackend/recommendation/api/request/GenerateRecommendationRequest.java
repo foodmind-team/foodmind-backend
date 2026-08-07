@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.recommendation.api.request;
 
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.FutureOrPresent;
@@ -31,6 +32,11 @@ public record GenerateRecommendationRequest(
         @Size(max = 120) String mood,
         @FutureOrPresent OffsetDateTime requestedFor,
         @Valid RecommendationConstraintsRequest constraints) {
+
+    @AssertTrue(message = "maxBudget and currency must either both be provided or both be omitted")
+    public boolean isBudgetCurrencyConsistent() {
+        return (maxBudget == null) == (currency == null);
+    }
 
     public RecommendationRequestContext toContext() {
         RecommendationConstraintsRequest safeConstraints = constraints == null

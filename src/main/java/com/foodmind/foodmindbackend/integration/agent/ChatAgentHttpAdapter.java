@@ -61,7 +61,7 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
             return fallback(command);
         }
         if (properties.getServiceToken() == null || properties.getServiceToken().isBlank()) {
-            return failure(command, ChatAgentFailureCode.CONFIGURATION_ERROR, null);
+            return fallback(command);
         }
         Instant startedAt = Instant.now();
         try {
@@ -80,22 +80,22 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
             }
             ChatAgentGenerationResult result = toResult(command, objectMapper.readValue(body, AgentChatResponse.class));
             log(command, result.failureCode(), startedAt);
-            return result;
+            return result.successful() ? result : fallback(command);
         } catch (RestClientResponseException exception) {
             log(command, ChatAgentFailureCode.NON_2XX, startedAt);
-            return failure(command, ChatAgentFailureCode.NON_2XX, null);
+            return fallback(command);
         } catch (ResourceAccessException exception) {
             ChatAgentFailureCode failureCode = timeout(exception)
                     ? ChatAgentFailureCode.TIMEOUT
                     : ChatAgentFailureCode.CONNECTION_ERROR;
             log(command, failureCode, startedAt);
-            return failure(command, failureCode, null);
+            return fallback(command);
         } catch (JacksonException exception) {
             log(command, ChatAgentFailureCode.MALFORMED_JSON, startedAt);
-            return failure(command, ChatAgentFailureCode.MALFORMED_JSON, null);
+            return fallback(command);
         } catch (IllegalArgumentException exception) {
             log(command, ChatAgentFailureCode.SCHEMA_MISMATCH, startedAt);
-            return failure(command, ChatAgentFailureCode.SCHEMA_MISMATCH, null);
+            return fallback(command);
         }
     }
 
