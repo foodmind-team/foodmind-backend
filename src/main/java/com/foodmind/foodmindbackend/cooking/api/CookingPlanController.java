@@ -5,11 +5,13 @@ import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.cooking.api.request.GenerateCookingPlanRequest;
 import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest.QuestionAnswer;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanAsyncAcceptedResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanInventoryConsumptionResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanSummaryResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanTaskProgressResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanTaskResponse;
 import com.foodmind.foodmindbackend.cooking.application.CancelCookingPlanTask;
+import com.foodmind.foodmindbackend.cooking.application.ConsumeCookingPlanInventory;
 import com.foodmind.foodmindbackend.cooking.application.GenerateCookingPlan;
 import com.foodmind.foodmindbackend.cooking.application.GetCookingPlan;
 import com.foodmind.foodmindbackend.cooking.application.GetCookingPlanTask;
@@ -48,16 +50,19 @@ public class CookingPlanController {
     private final GetCookingPlan getCookingPlan;
     private final GetCookingPlanTask getCookingPlanTask;
     private final CancelCookingPlanTask cancelCookingPlanTask;
+    private final ConsumeCookingPlanInventory consumeCookingPlanInventory;
 
     public CookingPlanController(
             GenerateCookingPlan generateCookingPlan,
             GetCookingPlan getCookingPlan,
             GetCookingPlanTask getCookingPlanTask,
-            CancelCookingPlanTask cancelCookingPlanTask) {
+            CancelCookingPlanTask cancelCookingPlanTask,
+            ConsumeCookingPlanInventory consumeCookingPlanInventory) {
         this.generateCookingPlan = generateCookingPlan;
         this.getCookingPlan = getCookingPlan;
         this.getCookingPlanTask = getCookingPlanTask;
         this.cancelCookingPlanTask = cancelCookingPlanTask;
+        this.consumeCookingPlanInventory = consumeCookingPlanInventory;
     }
 
     @PostMapping("/generate")
@@ -109,6 +114,13 @@ public class CookingPlanController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @PathVariable UUID planId) {
         return CookingPlanResponse.from(cancelCookingPlanTask.handle(principal.id(), planId));
+    }
+
+    @PostMapping("/{planId}/consume-inventory")
+    CookingPlanInventoryConsumptionResponse consumeInventory(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        return CookingPlanInventoryConsumptionResponse.from(consumeCookingPlanInventory.handle(principal.id(), planId));
     }
 
     @GetMapping("/{planId}")
