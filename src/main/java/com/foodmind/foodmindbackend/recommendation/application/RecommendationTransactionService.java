@@ -32,7 +32,7 @@ public class RecommendationTransactionService {
 
     private static final String AGENT_CONTRACT_VERSION = "recommendation-agent-v1";
     private static final String FEATURE_SCHEMA_VERSION = "recommendation-features-v1";
-    private static final long DEFAULT_DEADLINE_SECONDS = 2L;
+    private static final long DEFAULT_DEADLINE_SECONDS = 60L;
 
     private final RecommendationSessionRepository sessionRepository;
     private final Clock clock;
