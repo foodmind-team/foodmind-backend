@@ -23,6 +23,7 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTimelineTask;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -191,6 +192,112 @@ class JdbcCookingPlanRepositoryTest extends PostgreSqlContainerSupport {
                     assertThat(summary.taskCount()).isEqualTo(1);
                     assertThat(summary.makespanMinutes()).isEqualTo(54);
                 });
+    }
+
+    @Test
+    void createGenerationInsertsRowAndBackfillsAgentTaskId() {
+        UUID userId = insertUser("generation@example.test");
+        UUID recipeId = UUID.randomUUID();
+        AgentGeneratePlanRequest request = request(userId, "req-generation-1", recipeId);
+        UUID planId = repository.createProcessing(userId, request, sources(recipeId), "trace-7", json(request));
+
+        repository.createGeneration(planId, "task-abc");
+
+        String agentTaskId = jdbcTemplate.queryForObject(
+                "SELECT agent_task_id FROM cooking_plan WHERE id = :planId",
+                new MapSqlParameterSource("planId", planId),
+                String.class);
+        assertThat(agentTaskId).isEqualTo("task-abc");
+        CookingPlanRepository.GenerationRow row = repository.findGeneration(planId).orElseThrow();
+        assertThat(row.taskId()).isEqualTo("task-abc");
+        assertThat(row.syncState()).isEqualTo("PENDING");
+        assertThat(row.attemptCount()).isZero();
+        assertThat(row.nextPollAt()).isNotNull();
+    }
+
+    @Test
+    void claimOnlyReturnsDueRowsAndSkipsTerminalPlans() {
+        UUID userId = insertUser("claim@example.test");
+        UUID duePlanId = createProcessingPlan(userId, "req-claim-due");
+        UUID futurePlanId = createProcessingPlan(userId, "req-claim-future");
+        repository.createGeneration(duePlanId, "task-due");
+        repository.createGeneration(futurePlanId, "task-future");
+        // Rewind one generation so only it is due now; push the other into the future.
+        jdbcTemplate.update("UPDATE cooking_plan_generation SET next_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", duePlanId));
+        jdbcTemplate.update("UPDATE cooking_plan_generation SET next_poll_at = CURRENT_TIMESTAMP + INTERVAL '1 hour' WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", futurePlanId));
+
+        List<CookingPlanRepository.GenerationClaim> claimed =
+                repository.claimDueGenerations(20, Duration.ofSeconds(5));
+
+        assertThat(claimed).singleElement().satisfies(claim -> {
+            assertThat(claim.planId()).isEqualTo(duePlanId);
+            assertThat(claim.userId()).isEqualTo(userId);
+            assertThat(claim.taskId()).isEqualTo("task-due");
+            assertThat(claim.attemptCount()).isEqualTo(1);
+        });
+        // The claimed row is now POLLING and lease-renewed; the future row is untouched.
+        CookingPlanRepository.GenerationRow due = repository.findGeneration(duePlanId).orElseThrow();
+        assertThat(due.syncState()).isEqualTo("POLLING");
+        CookingPlanRepository.GenerationRow future = repository.findGeneration(futurePlanId).orElseThrow();
+        assertThat(future.syncState()).isEqualTo("PENDING");
+        assertThat(future.attemptCount()).isZero();
+    }
+
+    @Test
+    void claimSkipsRowsWhosePlanIsNoLongerProcessing() {
+        UUID userId = insertUser("claim-terminal@example.test");
+        UUID terminalPlanId = createProcessingPlan(userId, "req-claim-terminal");
+        repository.createGeneration(terminalPlanId, "task-terminal");
+        repository.completeFailed(userId, terminalPlanId, CookingAgentFailureCode.AGENT_INTERNAL_ERROR, null, null);
+        jdbcTemplate.update("UPDATE cooking_plan_generation SET next_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", terminalPlanId));
+
+        List<CookingPlanRepository.GenerationClaim> claimed =
+                repository.claimDueGenerations(20, Duration.ofSeconds(5));
+
+        assertThat(claimed).isEmpty();
+    }
+
+    @Test
+    void updateGenerationProgressMirrorsProgressAndReArmsLease() {
+        UUID userId = insertUser("progress@example.test");
+        UUID planId = createProcessingPlan(userId, "req-progress-1");
+        repository.createGeneration(planId, "task-progress");
+        jdbcTemplate.update("UPDATE cooking_plan_generation SET next_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", planId));
+        repository.claimDueGenerations(20, Duration.ofSeconds(5));
+
+        repository.updateGenerationProgress(planId, "solve_schedule", 7, "solving", Duration.ofSeconds(30));
+
+        CookingPlanRepository.GenerationRow row = repository.findGeneration(planId).orElseThrow();
+        assertThat(row.syncState()).isEqualTo("PENDING");
+        assertThat(row.lastProgressNode()).isEqualTo("solve_schedule");
+        assertThat(row.lastProgressSteps()).isEqualTo(7);
+        assertThat(row.lastProgressMessage()).isEqualTo("solving");
+        assertThat(row.nextPollAt()).isAfter(java.time.OffsetDateTime.now());
+    }
+
+    @Test
+    void completeGenerationMovesToTerminalStateAndStopsClaiming() {
+        UUID userId = insertUser("complete@example.test");
+        UUID planId = createProcessingPlan(userId, "req-complete-1");
+        repository.createGeneration(planId, "task-complete");
+        jdbcTemplate.update("UPDATE cooking_plan_generation SET next_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", planId));
+
+        repository.completeGeneration(planId, "SUCCEEDED");
+
+        CookingPlanRepository.GenerationRow row = repository.findGeneration(planId).orElseThrow();
+        assertThat(row.syncState()).isEqualTo("SUCCEEDED");
+        assertThat(repository.claimDueGenerations(20, Duration.ofSeconds(5))).isEmpty();
+    }
+
+    private UUID createProcessingPlan(UUID userId, String requestId) {
+        UUID recipeId = UUID.randomUUID();
+        AgentGeneratePlanRequest request = request(userId, requestId, recipeId);
+        return repository.createProcessing(userId, request, sources(recipeId), "trace-" + requestId, json(request));
     }
 
     private UUID insertUser(String email) {

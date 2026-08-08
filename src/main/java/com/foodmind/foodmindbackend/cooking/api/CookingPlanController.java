@@ -4,10 +4,18 @@ import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.cooking.api.request.GenerateCookingPlanRequest;
 import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest.QuestionAnswer;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanAsyncAcceptedResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanInventoryConsumptionResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanSummaryResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanTaskProgressResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanTaskResponse;
+import com.foodmind.foodmindbackend.cooking.application.CancelCookingPlanTask;
+import com.foodmind.foodmindbackend.cooking.application.ConsumeCookingPlanInventory;
 import com.foodmind.foodmindbackend.cooking.application.GenerateCookingPlan;
 import com.foodmind.foodmindbackend.cooking.application.GetCookingPlan;
+import com.foodmind.foodmindbackend.cooking.application.GetCookingPlanTask;
+import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -40,10 +48,21 @@ public class CookingPlanController {
 
     private final GenerateCookingPlan generateCookingPlan;
     private final GetCookingPlan getCookingPlan;
+    private final GetCookingPlanTask getCookingPlanTask;
+    private final CancelCookingPlanTask cancelCookingPlanTask;
+    private final ConsumeCookingPlanInventory consumeCookingPlanInventory;
 
-    public CookingPlanController(GenerateCookingPlan generateCookingPlan, GetCookingPlan getCookingPlan) {
+    public CookingPlanController(
+            GenerateCookingPlan generateCookingPlan,
+            GetCookingPlan getCookingPlan,
+            GetCookingPlanTask getCookingPlanTask,
+            CancelCookingPlanTask cancelCookingPlanTask,
+            ConsumeCookingPlanInventory consumeCookingPlanInventory) {
         this.generateCookingPlan = generateCookingPlan;
         this.getCookingPlan = getCookingPlan;
+        this.getCookingPlanTask = getCookingPlanTask;
+        this.cancelCookingPlanTask = cancelCookingPlanTask;
+        this.consumeCookingPlanInventory = consumeCookingPlanInventory;
     }
 
     @PostMapping("/generate")
@@ -55,6 +74,53 @@ public class CookingPlanController {
                 generateCookingPlan.handle(principal.id(), request.toContext(), idempotencyKey));
         return ResponseEntity.created(URI.create("/api/v1/cooking-plans/" + response.planId()))
                 .body(response);
+    }
+
+    @PostMapping("/generate-async")
+    ResponseEntity<Object> generateAsync(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody GenerateCookingPlanRequest request) {
+        GenerateCookingPlan.AsyncSubmitResult result =
+                generateCookingPlan.submitAsync(principal.id(), request.toContext(), idempotencyKey);
+        if (result instanceof GenerateCookingPlan.AsyncSubmitResult.Accepted accepted) {
+            CookingPlanAsyncAcceptedResponse body = new CookingPlanAsyncAcceptedResponse(
+                    accepted.planId(), accepted.status(), accepted.taskId(),
+                    "/api/v1/cooking-plans/" + accepted.planId() + "/task");
+            return ResponseEntity.accepted().body(body);
+        }
+        return ResponseEntity.ok(CookingPlanResponse.from(
+                ((GenerateCookingPlan.AsyncSubmitResult.RejectedPlan) result).plan()));
+    }
+
+    @GetMapping("/{planId}/task")
+    CookingPlanTaskResponse getTask(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        CookingPlanRepository.GenerationRow generation = getCookingPlanTask.handle(principal.id(), planId);
+        return new CookingPlanTaskResponse(
+                generation.planId(),
+                generation.taskId(),
+                "PROCESSING",
+                generation.syncState(),
+                new CookingPlanTaskProgressResponse(
+                        generation.lastProgressNode(),
+                        generation.lastProgressSteps(),
+                        generation.lastProgressMessage()));
+    }
+
+    @PostMapping("/{planId}/cancel")
+    CookingPlanResponse cancel(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        return CookingPlanResponse.from(cancelCookingPlanTask.handle(principal.id(), planId));
+    }
+
+    @PostMapping("/{planId}/consume-inventory")
+    CookingPlanInventoryConsumptionResponse consumeInventory(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        return CookingPlanInventoryConsumptionResponse.from(consumeCookingPlanInventory.handle(principal.id(), planId));
     }
 
     @GetMapping("/{planId}")

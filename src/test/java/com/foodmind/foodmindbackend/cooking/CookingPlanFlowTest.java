@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.foodmind.foodmindbackend.cooking.application.CookingTaskPollingCoordinator;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentCompletionItem;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
@@ -19,6 +20,10 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentMiseEnPlaceItem;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentQuestionOption;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRepairOption;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskProgress;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTimelineTask;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
@@ -26,6 +31,7 @@ import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -42,6 +48,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -55,10 +62,20 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@TestPropertySource(properties = {
+        "foodmind.cooking.task.poll-enabled=true",
+        "foodmind.cooking.task.poll-interval=1h"
+})
 class CookingPlanFlowTest extends PostgreSqlContainerSupport {
 
     private static final AtomicReference<Function<AgentGeneratePlanRequest, CookingAgentResult>> AGENT_RESPONSE =
             new AtomicReference<>(CookingPlanFlowTest::readyAgentResult);
+    private static final AtomicReference<Function<AgentGeneratePlanRequest, AgentTaskSubmission>> SUBMIT_RESPONSE =
+            new AtomicReference<>(request -> new AgentTaskSubmission(
+                    "task-async-1", AgentTaskStatus.QUEUED,
+                    "/internal/v2/cooking-plan/tasks/task-async-1", request.requestId()));
+    private static final AtomicReference<Function<String, AgentTaskSnapshot>> TASK_SNAPSHOT =
+            new AtomicReference<>(CookingPlanFlowTest::runningTaskSnapshot);
     private static final AtomicBoolean REMOTE_CALL_OBSERVED_TRANSACTION = new AtomicBoolean(true);
     private static final AtomicInteger AGENT_CALL_COUNT = new AtomicInteger();
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -69,12 +86,19 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private CookingTaskPollingCoordinator pollingCoordinator;
+
     @BeforeEach
     void cleanUserContent() {
         jdbcTemplate.execute("""
                 TRUNCATE TABLE idempotency_record, cooking_plan, auth_session, app_user CASCADE
                 """);
         AGENT_RESPONSE.set(CookingPlanFlowTest::readyAgentResult);
+        SUBMIT_RESPONSE.set(request -> new AgentTaskSubmission(
+                "task-async-1", AgentTaskStatus.QUEUED,
+                "/internal/v2/cooking-plan/tasks/task-async-1", request.requestId()));
+        TASK_SNAPSHOT.set(CookingPlanFlowTest::runningTaskSnapshot);
         REMOTE_CALL_OBSERVED_TRANSACTION.set(true);
         AGENT_CALL_COUNT.set(0);
     }
@@ -400,6 +424,176 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
     }
 
+    @Test
+    void asyncGenerateReturns202ThenPollingMaterialisesReadyPlan() throws Exception {
+        String accessToken = read(register("cooking-async@example.test", "Cooking Async"), "$.accessToken");
+
+        MvcResult accepted = mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-ready-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.taskId").value("task-async-1"))
+                .andExpect(jsonPath("$.location").value(org.hamcrest.Matchers.endsWith("/task")))
+                .andReturn();
+        String planId = read(accepted, "$.planId");
+
+        // Submission ran outside any database transaction; task handle is persisted.
+        assertThat(REMOTE_CALL_OBSERVED_TRANSACTION).isFalse();
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
+        String agentTaskId = jdbcTemplate.queryForObject(
+                "SELECT agent_task_id FROM cooking_plan WHERE id = ?", String.class, UUID.fromString(planId));
+        assertThat(agentTaskId).isEqualTo("task-async-1");
+
+        // The first poll (RUNNING) mirrors progress and renews the lease.
+        pollingCoordinator.pollDueTasks();
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}/task", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value("task-async-1"))
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.syncState").value("PENDING"))
+                .andExpect(jsonPath("$.progress.node").value("solve_schedule"))
+                .andExpect(jsonPath("$.progress.completedSteps").value(7));
+
+        // The next poll (READY) materialises the terminal state.
+        forceDuePoll(UUID.fromString(planId));
+        TASK_SNAPSHOT.set(CookingPlanFlowTest::readyTaskSnapshot);
+        pollingCoordinator.pollDueTasks();
+
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.makespanMinutes").value(54));
+        // Terminal plans are no longer served by the task endpoint.
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}/task", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void asyncReplayWithSameKeyReturnsSamePlanWithoutSecondSubmission() throws Exception {
+        String accessToken = read(register("cooking-async-replay@example.test", "Cooking Async Replay"), "$.accessToken");
+
+        MvcResult first = mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-replay-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        String planId = read(first, "$.planId");
+
+        // Poll to a terminal state, then replay: same plan, no new submission.
+        forceDuePoll(UUID.fromString(planId));
+        TASK_SNAPSHOT.set(CookingPlanFlowTest::readyTaskSnapshot);
+        pollingCoordinator.pollDueTasks();
+        AGENT_CALL_COUNT.set(0);
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-replay-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.planId").value(planId))
+                .andExpect(jsonPath("$.taskId").value("task-async-1"));
+
+        assertThat(AGENT_CALL_COUNT).hasValue(0);
+        Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
+        assertThat(planCount).isEqualTo(1);
+    }
+
+    @Test
+    void asyncSubmitFailureReturnsTerminalFailedPlanWith200() throws Exception {
+        SUBMIT_RESPONSE.set(request -> {
+            throw new com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException(
+                    CookingAgentFailureCode.OVERLOADED);
+        });
+        String accessToken = read(register("cooking-async-fail@example.test", "Cooking Async Fail"), "$.accessToken");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-fail-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.errorCode").value("OVERLOADED"))
+                .andReturn();
+        String planId = read(result, "$.planId");
+
+        // The failed submission must not leave a pollable generation row behind.
+        Long generationCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM cooking_plan_generation WHERE plan_id = ?", Long.class, UUID.fromString(planId));
+        assertThat(generationCount).isZero();
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}/task", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void asyncPollingFailureBeyondMaxAttemptsFailsPlan() throws Exception {
+        String accessToken = read(register("cooking-async-pollfail@example.test", "Cooking Async PollFail"), "$.accessToken");
+        MvcResult accepted = mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-pollfail-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        String planId = read(accepted, "$.planId");
+
+        TASK_SNAPSHOT.set(taskId -> {
+            throw new com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException(
+                    CookingAgentFailureCode.TIMEOUT);
+        });
+        for (int attempt = 0; attempt < 5; attempt++) {
+            forceDuePoll(UUID.fromString(planId));
+            pollingCoordinator.pollDueTasks();
+        }
+
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.errorCode").value("TIMEOUT"));
+    }
+
+    @Test
+    void asyncCancelMarksPlanFailedWithoutDirtyData() throws Exception {
+        String accessToken = read(register("cooking-async-cancel@example.test", "Cooking Async Cancel"), "$.accessToken");
+        MvcResult accepted = mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "async-cancel-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        String planId = read(accepted, "$.planId");
+
+        TASK_SNAPSHOT.set(CookingPlanFlowTest::runningTaskSnapshot);
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/cancel", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.errorCode").value("TASK_CANCELLED"));
+        String syncState = jdbcTemplate.queryForObject(
+                "SELECT sync_state FROM cooking_plan_generation WHERE plan_id = ?", String.class, UUID.fromString(planId));
+        assertThat(syncState).isEqualTo("CANCELLED");
+
+        // Cancel is idempotent in effect: a second call conflicts (plan no longer PROCESSING).
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/cancel", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/v1/cooking-plans/{planId}/task", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isNotFound());
+    }
+
     private static CookingAgentResult readyAgentResult(AgentGeneratePlanRequest request) {
         AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
                 request.requestId(), "READY", "OPTIMAL", 54,
@@ -434,6 +628,29 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 List.of(new AgentDecision("opt-1", "reduce_servings", Map.of("servings", 2), revision)),
                 revision, null);
         return CookingAgentResult.of(confirmation, json(confirmation));
+    }
+
+    private static AgentTaskSnapshot runningTaskSnapshot(String taskId) {
+        return new AgentTaskSnapshot(taskId, AgentTaskStatus.RUNNING, null, null,
+                new AgentTaskProgress("solve_schedule", 7, "solving"), null, null);
+    }
+
+    private static AgentTaskSnapshot readyTaskSnapshot(String taskId) {
+        AgentReadyPlanResponse ready = readyPlan(taskId);
+        return new AgentTaskSnapshot(taskId, AgentTaskStatus.READY, null, null,
+                new AgentTaskProgress("finalise", 9, null), json(ready), null);
+    }
+
+    private static AgentReadyPlanResponse readyPlan(String planId) {
+        return new AgentReadyPlanResponse(
+                planId, "READY", "OPTIMAL", 54,
+                List.of(new AgentTimelineTask("t-1", 0, 6, 6, "Pan-fry the tofu.", "d-1", "ACTIVE",
+                        "preparation", "MEDIUM", List.of("stove"), null, null)),
+                List.of(new AgentCompletionItem("c-1", "chilli", List.of("d-1"), List.of())),
+                List.of(new AgentMiseEnPlaceItem("dice: chicken breast", "chicken breast", "dice", 6,
+                        List.of("knife"), "diced_chicken")),
+                List.of(new AgentDishCompletion("d-1", 54, 9, false)),
+                null, null, null);
     }
 
     private static String json(Object value) {
@@ -509,6 +726,14 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 """;
     }
 
+    private void forceDuePoll(UUID planId) {
+        jdbcTemplate.update("""
+                UPDATE cooking_plan_generation
+                SET next_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 second'
+                WHERE plan_id = ?
+                """, planId);
+    }
+
     private String read(MvcResult result, String path) throws Exception {
         return JsonPath.read(result.getResponse().getContentAsString(), path);
     }
@@ -523,10 +748,32 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         @Bean
         @Primary
         CookingAgentPort cookingAgentPort() {
-            return request -> {
-                AGENT_CALL_COUNT.incrementAndGet();
-                REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
-                return AGENT_RESPONSE.get().apply(request);
+            return new CookingAgentPort() {
+                @Override
+                public CookingAgentResult generate(AgentGeneratePlanRequest request) {
+                    AGENT_CALL_COUNT.incrementAndGet();
+                    REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
+                    return AGENT_RESPONSE.get().apply(request);
+                }
+
+                @Override
+                public AgentTaskSubmission submitTask(AgentGeneratePlanRequest request) {
+                    AGENT_CALL_COUNT.incrementAndGet();
+                    REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
+                    return SUBMIT_RESPONSE.get().apply(request);
+                }
+
+                @Override
+                public AgentTaskSnapshot getTask(String taskId) {
+                    REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
+                    return TASK_SNAPSHOT.get().apply(taskId);
+                }
+
+                @Override
+                public AgentTaskSnapshot cancelTask(String taskId) {
+                    REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
+                    return TASK_SNAPSHOT.get().apply(taskId);
+                }
             };
         }
     }

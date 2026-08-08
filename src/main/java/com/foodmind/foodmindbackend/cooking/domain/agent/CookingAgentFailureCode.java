@@ -33,5 +33,9 @@ public enum CookingAgentFailureCode {
     SCHEDULE_VERIFICATION_FAILED,
     AGENT_INTERNAL_ERROR,
     OVERLOADED,
-    INVALID_INTERNAL_CREDENTIAL
+    INVALID_INTERNAL_CREDENTIAL,
+    // Async task API codes (Task 08, pure additions).
+    AGENT_TASK_NOT_FOUND,
+    TASK_CANCELLED,
+    TASK_EXPIRED
 }

@@ -6,6 +6,8 @@ import com.foodmind.foodmindbackend.common.idempotency.IdempotencyRecord;
 import com.foodmind.foodmindbackend.common.idempotency.IdempotencyService;
 import com.foodmind.foodmindbackend.common.observability.CorrelationIdFilter;
 import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanAsyncAcceptedResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingContextQuery;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
@@ -21,8 +23,10 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanReques
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.ArrayList;
@@ -31,6 +35,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -48,6 +53,7 @@ public class GenerateCookingPlan {
 
     private static final String OPERATION = "COOKING_PLAN_GENERATE";
     private static final String OPERATION_DECIDE = "COOKING_PLAN_DECIDE";
+    private static final String OPERATION_ASYNC = "COOKING_PLAN_GENERATE_ASYNC";
     private static final int MAX_TEXT_ANSWER_LENGTH = 500;
 
     private final CookingContextQuery contextQuery;
@@ -92,6 +98,90 @@ public class GenerateCookingPlan {
         return generateAndPersist(userId, agentRequest,
                 assembler.recipeInputs(candidates, request.servings()), traceId,
                 OPERATION, idempotencyKey, requestHashSeed);
+    }
+
+    /**
+     * Asynchronous submission ({@code POST /generate-async}): assembles the same
+     * agent request, persists a PROCESSING plan, submits the task to the agent's
+     * task API and records the generation row for the background coordinator.
+     * The idempotency record is completed as soon as the task is submitted (202)
+     * — later polling is background work. When the submission itself fails the
+     * plan is materialised as FAILED and returned as the terminal plan (200).
+     */
+    public AsyncSubmitResult submitAsync(UUID userId, CookingPlanRequestContext request, String idempotencyKey) {
+        CookingPreferenceRules mergedRules = mergedRules(contextQuery.preferenceRules(userId), request);
+        List<RecipeCandidate> candidates = contextQuery.controlledCandidates(userId, request, mergedRules);
+        if (candidates.isEmpty()) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Select at least one saved recipe.");
+        }
+        String traceId = traceId();
+        AgentGeneratePlanRequest agentRequest = assembler.assemble(userId, request, mergedRules, candidates, traceId);
+        // Hash the PUBLIC request snapshot (never the agent request, which embeds a per-call trace id).
+        String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
+        String requestHash = idempotencyService.sha256Hex(requestHashSeed);
+        IdempotencyRecord idempotency = idempotencyService.begin(userId, OPERATION_ASYNC, idempotencyKey, requestHash);
+
+        if ("COMPLETED".equals(idempotency.state()) && idempotency.resourceId() != null) {
+            CookingPlanResult plan = planRepository.findOwned(userId, idempotency.resourceId())
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            Optional<CookingPlanRepository.GenerationRow> generation = planRepository.findGeneration(plan.planId());
+            if (generation.isPresent()) {
+                return AsyncSubmitResult.accepted(plan.planId(), plan.status(), generation.get().taskId());
+            }
+            return AsyncSubmitResult.failedPlan(plan);
+        }
+        if (!"IN_PROGRESS".equals(idempotency.state())) {
+            throw new ApiException(ErrorCode.CONFLICT, "The idempotency record is not available for retry.");
+        }
+
+        UUID planId = planRepository.createProcessing(userId, agentRequest,
+                assembler.recipeInputs(candidates, request.servings()), traceId, toJson(agentRequest));
+        AgentTaskSubmission submission;
+        try {
+            submission = cookingAgentPort.submitTask(agentRequest);
+        } catch (CookingAgentTaskException exception) {
+            CookingAgentFailureCode code = exception.getFailureCode() == null
+                    ? CookingAgentFailureCode.AGENT_INTERNAL_ERROR
+                    : exception.getFailureCode();
+            planRepository.completeFailed(userId, planId, code, null, null);
+            planRepository.completeGeneration(planId, "FAILED");
+            CookingPlanResult failed = planRepository.findOwned(userId, planId)
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            idempotencyService.complete(idempotency.id(), planId, 200, toJson(CookingPlanResponse.from(failed)));
+            return AsyncSubmitResult.failedPlan(failed);
+        }
+        planRepository.createGeneration(planId, submission.taskId());
+        CookingPlanAsyncAcceptedResponse acceptedBody = new CookingPlanAsyncAcceptedResponse(
+                planId, "PROCESSING", submission.taskId(), taskLocation(planId));
+        idempotencyService.complete(idempotency.id(), planId, 202, toJson(acceptedBody));
+        return AsyncSubmitResult.accepted(planId, "PROCESSING", submission.taskId());
+    }
+
+    private static String taskLocation(UUID planId) {
+        return "/api/v1/cooking-plans/" + planId + "/task";
+    }
+
+    /**
+     * Outcome of an async submission: {@link Accepted} maps to {@code 202} with the
+     * task handle, {@link RejectedPlan} maps to {@code 200} with the terminal FAILED
+     * plan (submission failed before a task existed). Replay of a completed
+     * idempotency key reproduces whichever outcome the first attempt produced.
+     */
+    public sealed interface AsyncSubmitResult {
+
+        record Accepted(UUID planId, String status, String taskId) implements AsyncSubmitResult {
+        }
+
+        record RejectedPlan(CookingPlanResult plan) implements AsyncSubmitResult {
+        }
+
+        static Accepted accepted(UUID planId, String status, String taskId) {
+            return new Accepted(planId, status, taskId);
+        }
+
+        static RejectedPlan failedPlan(CookingPlanResult plan) {
+            return new RejectedPlan(plan);
+        }
     }
 
     /**
