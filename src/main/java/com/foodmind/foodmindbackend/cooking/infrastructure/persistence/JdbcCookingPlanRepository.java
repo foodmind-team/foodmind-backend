@@ -65,16 +65,44 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             List<AgentRecipeInput> sources,
             String traceId,
             String rawRequestJson) {
+        return createProcessing(userId, request, sources, traceId, rawRequestJson, null, null);
+    }
+
+    @Override
+    @Transactional
+    public UUID createProcessingChild(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            UUID parentPlanId,
+            UUID rootPlanId) {
+        if (parentPlanId == null || rootPlanId == null) {
+            throw new IllegalArgumentException("Child cooking plans require parent and root plan IDs.");
+        }
+        return createProcessing(userId, request, sources, traceId, rawRequestJson, parentPlanId, rootPlanId);
+    }
+
+    private UUID createProcessing(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            UUID parentPlanId,
+            UUID requestedRootPlanId) {
         UUID planId = UUID.randomUUID();
+        UUID rootPlanId = requestedRootPlanId == null ? planId : requestedRootPlanId;
         String correlationId = sanitiseCorrelationId(traceId);
         jdbcTemplate.update("""
                 INSERT INTO cooking_plan (
-                    id, user_id, status, agent_request_id, plan_revision, region, cooking_date,
+                    id, user_id, parent_plan_id, root_plan_id, status, agent_request_id, plan_revision, region, cooking_date,
                     serving_at, time_limit_minutes, correlation_id, agent_trace_id, schema_version,
                     request_context
                 )
                 VALUES (
-                    :id, :userId, 'PROCESSING', :agentRequestId, :planRevision, :region, :cookingDate,
+                    :id, :userId, :parentPlanId, :rootPlanId, 'PROCESSING', :agentRequestId, :planRevision, :region, :cookingDate,
                     :servingAt, :timeLimitMinutes, :correlationId, :agentTraceId, :schemaVersion,
                     CAST(:requestContext AS jsonb)
                 )
@@ -82,6 +110,8 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 new MapSqlParameterSource()
                         .addValue("id", planId)
                         .addValue("userId", userId)
+                        .addValue("parentPlanId", parentPlanId)
+                        .addValue("rootPlanId", rootPlanId)
                         .addValue("agentRequestId", request.requestId())
                         .addValue("planRevision", request.planRevision())
                         .addValue("region", request.region())
@@ -250,6 +280,22 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 (rs, rowNum) -> rs.getString("request_context"))
                 .stream()
                 .findFirst();
+    }
+
+    @Override
+    public Optional<PlanLineage> findLineage(UUID userId, UUID planId) {
+        return jdbcTemplate.query("""
+                SELECT id, parent_plan_id, root_plan_id
+                FROM cooking_plan
+                WHERE id = :planId AND user_id = :userId
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("userId", userId),
+                (rs, rowNum) -> new PlanLineage(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("parent_plan_id", UUID.class),
+                        rs.getObject("root_plan_id", UUID.class)))
+                .stream().findFirst();
     }
 
     @Override
@@ -531,11 +577,11 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                             .addValue("planId", planId)
                             .addValue("sequenceNo", sequence++)
                             .addValue("instruction", item.instruction())
-                            .addValue("ingredient", item.ingredient())
-                            .addValue("operation", item.operation())
+                            .addValue("ingredient", truncate(item.ingredient(), 256))
+                            .addValue("operation", truncate(item.operation(), 64))
                             .addValue("duration", item.durationMinutes())
                             .addValue("resources", item.resources().toArray(String[]::new))
-                            .addValue("whenNeeded", item.whenNeeded()));
+                            .addValue("whenNeeded", truncate(item.whenNeeded(), 64)));
         }
     }
 
@@ -576,6 +622,14 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                             .addValue("ingredientName", item.ingredientName())
                             .addValue("recipeIds", item.recipeIds().toArray(String[]::new)));
             for (com.foodmind.foodmindbackend.cooking.domain.agent.AgentLotAllocation allocation : item.allocations()) {
+                UUID inventoryLotId = uuidOrNull(allocation.inventoryLotId());
+                if (inventoryLotId == null || !lotExists(inventoryLotId)) {
+                    // The allocation references a transient lot injected by the
+                    // agent for a "buy missing ingredients" decision — it is not
+                    // persisted in inventory_lot, so the FK cannot be satisfied.
+                    // Keep the completion item; skip only the allocation row.
+                    continue;
+                }
                 jdbcTemplate.update("""
                         INSERT INTO cooking_plan_lot_allocation (
                             id, completion_item_id, inventory_lot_id, quantity, unit, is_reserved
@@ -585,7 +639,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                         new MapSqlParameterSource()
                                 .addValue("id", UUID.randomUUID())
                                 .addValue("completionItemId", completionItemId)
-                                .addValue("inventoryLotId", uuidOrNull(allocation.inventoryLotId()))
+                                .addValue("inventoryLotId", inventoryLotId)
                                 .addValue("quantity", allocation.quantity())
                                 .addValue("unit", allocation.unit()));
             }
@@ -705,7 +759,12 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
 
     private CookingPlanResult assemble(RootRow root) {
         List<CookingPlanResult.Source> sources = sources(root.id());
-        AgentPlanResponse parsed = parseResponse(root.responseJson());
+        // Failed and in-flight plans may retain a non-conforming raw agent payload
+        // for diagnostics. Only terminal business responses are safe to deserialize.
+        AgentPlanResponse parsed = switch (root.status()) {
+            case "READY", "NEEDS_CONFIRMATION", "INFEASIBLE" -> parseResponse(root.responseJson());
+            default -> null;
+        };
         CookingPlanResult.SafetyPolicy safetyPolicy = safetyPolicy(root.safetyPolicyJson());
         return switch (root.status()) {
             case "READY" -> ready(root, sources, parsed, safetyPolicy);
@@ -1113,6 +1172,23 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
         }
         int newline = text.indexOf('\n');
         return newline < 0 ? text : text.substring(0, newline);
+    }
+
+    /** Truncates a value to the column's varchar limit, avoiding DB constraint errors. */
+    private static String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
+
+    /** True when the inventory lot exists in the persisted inventory_lot table. */
+    private boolean lotExists(UUID lotId) {
+        List<UUID> rows = jdbcTemplate.query(
+                "SELECT id FROM inventory_lot WHERE id = :lotId",
+                new MapSqlParameterSource("lotId", lotId),
+                (rs, rowNum) -> rs.getObject("id", UUID.class));
+        return !rows.isEmpty();
     }
 
     private String sanitiseCorrelationId(String traceId) {

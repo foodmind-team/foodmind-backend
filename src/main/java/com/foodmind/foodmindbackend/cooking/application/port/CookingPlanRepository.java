@@ -24,6 +24,9 @@ public interface CookingPlanRepository {
     UUID createProcessing(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
                           String traceId, String rawRequestJson);
 
+    UUID createProcessingChild(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
+                               String traceId, String rawRequestJson, UUID parentPlanId, UUID rootPlanId);
+
     void completeReady(UUID userId, UUID planId, AgentReadyPlanResponse response, String rawResponseJson);
 
     void completeConfirmation(UUID userId, UUID planId, AgentConfirmationPlanResponse response, String rawResponseJson);
@@ -37,6 +40,8 @@ public interface CookingPlanRepository {
 
     /** The stored agent request JSON ({@code request_context}) of an owned plan. */
     Optional<String> findRequestContext(UUID userId, UUID planId);
+
+    Optional<PlanLineage> findLineage(UUID userId, UUID planId);
 
     List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size);
 
@@ -84,5 +89,8 @@ public interface CookingPlanRepository {
             String lastProgressNode,
             int lastProgressSteps,
             String lastProgressMessage) {
+    }
+
+    record PlanLineage(UUID planId, UUID parentPlanId, UUID rootPlanId) {
     }
 }

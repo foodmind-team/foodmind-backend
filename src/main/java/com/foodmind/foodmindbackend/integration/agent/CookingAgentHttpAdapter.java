@@ -5,6 +5,7 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailureCodeMapper;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskProgress;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
@@ -16,6 +17,10 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,6 +31,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -63,6 +69,7 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
             return CookingAgentResult.failure(CookingAgentFailureCode.CONFIGURATION_ERROR, null);
         }
         Instant startedAt = Instant.now();
+        String raw = null;
         try {
             byte[] body = restClient.post()
                     .uri(properties.getEndpointPath())
@@ -76,7 +83,7 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
                 log(request, CookingAgentFailureCode.OVERSIZED_RESPONSE, startedAt);
                 return CookingAgentResult.failure(CookingAgentFailureCode.OVERSIZED_RESPONSE, null);
             }
-            String raw = new String(body, StandardCharsets.UTF_8);
+            raw = new String(body, StandardCharsets.UTF_8);
             AgentPlanResponse response = objectMapper.readValue(raw, AgentPlanResponse.class);
             if ("FAILED".equals(response.status())) {
                 AgentFailedPlanResponse failed = (AgentFailedPlanResponse) response;
@@ -110,11 +117,57 @@ public class CookingAgentHttpAdapter implements CookingAgentPort {
             log(request, code, startedAt);
             return CookingAgentResult.failure(code, null);
         } catch (JacksonException exception) {
+            LOGGER.error(
+                    "cooking_agent_response_parse_failed requestId={} rawPreview={}",
+                    request.requestId(),
+                    String.valueOf(raw).length() > 200 ? String.valueOf(raw).substring(0, 200) : raw,
+                    exception);
             log(request, CookingAgentFailureCode.MALFORMED_JSON, startedAt);
             return CookingAgentResult.failure(CookingAgentFailureCode.MALFORMED_JSON, null);
         } catch (IllegalArgumentException exception) {
             log(request, CookingAgentFailureCode.SCHEMA_MISMATCH, startedAt);
             return CookingAgentResult.failure(CookingAgentFailureCode.SCHEMA_MISMATCH, null);
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> preprocess(List<AgentRecipeInput> recipes) {
+        if (!properties.isEnabled()) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.AGENT_DISABLED);
+        }
+        if (properties.getServiceToken() == null || properties.getServiceToken().isBlank()) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.CONFIGURATION_ERROR);
+        }
+        try {
+            Map<String, Object> body = Map.of(
+                    "request_id", UUID.randomUUID().toString(),
+                    "recipes", recipes);
+            byte[] raw = restClient.post()
+                    .uri(properties.getPreprocessPath())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(INTERNAL_TOKEN_HEADER, properties.getServiceToken())
+                    .body(body)
+                    .retrieve()
+                    .body(byte[].class);
+            String response = requireBody(raw);
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode recipesNode = root.path("recipes");
+            if (!recipesNode.isArray()) {
+                throw new CookingAgentTaskException(CookingAgentFailureCode.MALFORMED_JSON);
+            }
+            List<Map<String, Object>> candidates = new ArrayList<>();
+            for (JsonNode node : recipesNode) {
+                candidates.add(objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {}));
+            }
+            return candidates;
+        } catch (RestClientResponseException exception) {
+            throw new CookingAgentTaskException(httpFailureCode(exception.getStatusCode().value()));
+        } catch (ResourceAccessException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (RestClientException exception) {
+            throw new CookingAgentTaskException(accessFailureCode(exception));
+        } catch (JacksonException exception) {
+            throw new CookingAgentTaskException(CookingAgentFailureCode.MALFORMED_JSON);
         }
     }
 

@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.cooking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,6 +20,7 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResp
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentMiseEnPlaceItem;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentQuestionOption;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRepairOption;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskProgress;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
@@ -594,6 +596,94 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void shoppingCheckoutRequiresEveryItemPersistsInventoryOnceAndRestoresOriginalServings() throws Exception {
+        AGENT_RESPONSE.set(CookingPlanFlowTest::purchaseConfirmationAgentResult);
+        String accessToken = read(register("cooking-shopping@example.test", "Cooking Shopping"), "$.accessToken");
+
+        MvcResult confirmation = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "shopping-root-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(fourServingRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andExpect(jsonPath("$.decisions.length()").value(2))
+                .andReturn();
+        String planId = read(confirmation, "$.planId");
+
+        MvcResult shoppingList = mockMvc.perform(post("/api/v1/cooking-plans/{planId}/shopping-list", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.originalServings").value(4))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.items[0].ingredientName").value("Firm tofu"))
+                .andExpect(jsonPath("$.items[0].requiredQuantity").value(600))
+                .andReturn();
+        String shoppingListId = read(shoppingList, "$.shoppingListId");
+        String itemId = read(shoppingList, "$.items[0].itemId");
+
+        mockMvc.perform(post("/api/v1/shopping-lists/{shoppingListId}/complete", shoppingListId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "shopping-premature-key"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Check every purchased item before continuing."));
+        assertThat(inventoryCount()).isZero();
+
+        mockMvc.perform(patch("/api/v1/shopping-lists/{shoppingListId}/items/{itemId}", shoppingListId, itemId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header(HttpHeaders.IF_MATCH, "\"0\"")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "checked": true,
+                                  "purchasedQuantity": 600,
+                                  "unit": "g",
+                                  "expiryDate": "2026-08-14"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checkedItemCount").value(1));
+
+        AtomicReference<AgentGeneratePlanRequest> continuationRequest = new AtomicReference<>();
+        SUBMIT_RESPONSE.set(request -> {
+            continuationRequest.set(request);
+            return new AgentTaskSubmission(
+                    "task-shopping-1", AgentTaskStatus.QUEUED,
+                    "/internal/v2/cooking-plan/tasks/task-shopping-1", request.requestId());
+        });
+        MvcResult completed = mockMvc.perform(post("/api/v1/shopping-lists/{shoppingListId}/complete", shoppingListId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "shopping-complete-key"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.taskId").value("task-shopping-1"))
+                .andReturn();
+        String continuationPlanId = read(completed, "$.planId");
+
+        assertThat(inventoryCount()).isEqualTo(1);
+        assertThat(continuationRequest.get().recipes())
+                .allSatisfy(recipe -> assertThat(recipe.targetServings()).isEqualByComparingTo("4"));
+        assertThat(continuationRequest.get().inventoryLots())
+                .anySatisfy(lot -> {
+                    assertThat(lot.canonicalName()).isEqualTo("Firm tofu");
+                    assertThat(lot.onHand()).isEqualByComparingTo("600");
+                });
+
+        mockMvc.perform(post("/api/v1/shopping-lists/{shoppingListId}/complete", shoppingListId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "shopping-complete-key"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.planId").value(continuationPlanId));
+        assertThat(inventoryCount()).isEqualTo(1);
+
+        mockMvc.perform(get("/api/v1/shopping-lists/{shoppingListId}", shoppingListId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.continuationPlanId").value(continuationPlanId));
+    }
+
     private static CookingAgentResult readyAgentResult(AgentGeneratePlanRequest request) {
         AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
                 request.requestId(), "READY", "OPTIMAL", 54,
@@ -603,7 +693,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 List.of(new AgentMiseEnPlaceItem("dice: chicken breast", "chicken breast", "dice", 6,
                         List.of("knife"), "diced_chicken")),
                 List.of(new AgentDishCompletion("d-1", 54, 9, false)),
-                null, null, null);
+                null, null, null, List.of());
         return CookingAgentResult.of(ready, null);
     }
 
@@ -630,6 +720,36 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         return CookingAgentResult.of(confirmation, json(confirmation));
     }
 
+    private static CookingAgentResult purchaseConfirmationAgentResult(AgentGeneratePlanRequest request) {
+        String revision = request.requestId() + ":v1";
+        Map<String, Object> purchasePayload = Map.of("items", List.of(Map.of(
+                "ingredient_name", "Firm tofu",
+                "quantity", 600,
+                "unit", "g")));
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                request.requestId(), "NEEDS_CONFIRMATION", List.of(),
+                List.of(
+                        new AgentRepairOption("purchase-1", "purchase", "Buy missing ingredients",
+                                List.of("Buy 600 g Firm tofu"), List.of("Inventory can satisfy the plan"), "validated"),
+                        new AgentRepairOption("reduce-1", "reduce_servings", "Reduce servings",
+                                List.of("servings 4 -> 1"), List.of("Recheck inventory"), "validated")),
+                List.of("Inventory is insufficient."),
+                List.of(
+                        new AgentConfirmationQuestion("repair:purchase-1", "repair_options",
+                                "Buy the missing ingredients?", "CHOICE",
+                                List.of(new AgentQuestionOption("purchase-1", "Buy ingredients", true)),
+                                false, "purchase-1"),
+                        new AgentConfirmationQuestion("repair:reduce-1", "repair_options",
+                                "Reduce servings?", "CHOICE",
+                                List.of(new AgentQuestionOption("reduce-1", "Reduce servings", false)),
+                                false, "reduce-1")),
+                List.of(
+                        new AgentDecision("purchase-1", "purchase", purchasePayload, revision),
+                        new AgentDecision("reduce-1", "reduce_servings", Map.of("servings", 1), revision)),
+                revision, null);
+        return CookingAgentResult.of(confirmation, json(confirmation));
+    }
+
     private static AgentTaskSnapshot runningTaskSnapshot(String taskId) {
         return new AgentTaskSnapshot(taskId, AgentTaskStatus.RUNNING, null, null,
                 new AgentTaskProgress("solve_schedule", 7, "solving"), null, null);
@@ -650,7 +770,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 List.of(new AgentMiseEnPlaceItem("dice: chicken breast", "chicken breast", "dice", 6,
                         List.of("knife"), "diced_chicken")),
                 List.of(new AgentDishCompletion("d-1", 54, 9, false)),
-                null, null, null);
+                null, null, null, List.of());
     }
 
     private static String json(Object value) {
@@ -685,6 +805,22 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                     { "ingredientName": "Fresh ginger", "quantity": 15, "unit": "g", "source": "MANUAL" }
                   ],
                   "servings": 2,
+                  "maxMinutes": 60,
+                  "maxBudget": 20,
+                  "currency": "SGD",
+                  "requiredDietaryTagCodes": ["VEGAN"],
+                  "avoidAllergenCodes": []
+                }
+                """;
+    }
+
+    private String fourServingRequest() {
+        return """
+                {
+                  "ingredients": [
+                    { "ingredientName": "Firm tofu", "quantity": 600, "unit": "g", "source": "MANUAL" }
+                  ],
+                  "servings": 4,
                   "maxMinutes": 60,
                   "maxBudget": 20,
                   "currency": "SGD",
@@ -734,6 +870,10 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 """, planId);
     }
 
+    private long inventoryCount() {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM inventory_lot", Long.class);
+    }
+
     private String read(MvcResult result, String path) throws Exception {
         return JsonPath.read(result.getResponse().getContentAsString(), path);
     }
@@ -773,6 +913,12 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 public AgentTaskSnapshot cancelTask(String taskId) {
                     REMOTE_CALL_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
                     return TASK_SNAPSHOT.get().apply(taskId);
+                }
+
+                @Override
+                public List<Map<String, Object>> preprocess(List<AgentRecipeInput> recipes) {
+                    // Test stub: no pre-parsed candidates — the agent parses internally.
+                    return List.of();
                 }
             };
         }

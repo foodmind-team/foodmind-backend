@@ -13,6 +13,7 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResp
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskProgress;
+import java.util.Map;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
@@ -244,6 +245,11 @@ class CookingTaskPollingCoordinatorTest {
         public AgentTaskSnapshot cancelTask(String taskId) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public List<Map<String, Object>> preprocess(List<AgentRecipeInput> recipes) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static class FakeCookingPlanRepository implements CookingPlanRepository {
@@ -266,6 +272,13 @@ class CookingTaskPollingCoordinatorTest {
         @Override
         public UUID createProcessing(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
                 String traceId, String rawRequestJson) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public UUID createProcessingChild(UUID userId, AgentGeneratePlanRequest request,
+                List<AgentRecipeInput> sources, String traceId, String rawRequestJson,
+                UUID parentPlanId, UUID rootPlanId) {
             throw new UnsupportedOperationException();
         }
 
@@ -299,6 +312,11 @@ class CookingTaskPollingCoordinatorTest {
 
         @Override
         public Optional<String> findRequestContext(UUID userId, UUID planId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<PlanLineage> findLineage(UUID userId, UUID planId) {
             throw new UnsupportedOperationException();
         }
 

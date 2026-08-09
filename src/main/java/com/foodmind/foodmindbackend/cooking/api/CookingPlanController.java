@@ -83,6 +83,10 @@ public class CookingPlanController {
             @Valid @RequestBody GenerateCookingPlanRequest request) {
         GenerateCookingPlan.AsyncSubmitResult result =
                 generateCookingPlan.submitAsync(principal.id(), request.toContext(), idempotencyKey);
+        return asyncResponse(result);
+    }
+
+    private ResponseEntity<Object> asyncResponse(GenerateCookingPlan.AsyncSubmitResult result) {
         if (result instanceof GenerateCookingPlan.AsyncSubmitResult.Accepted accepted) {
             CookingPlanAsyncAcceptedResponse body = new CookingPlanAsyncAcceptedResponse(
                     accepted.planId(), accepted.status(), accepted.taskId(),
@@ -137,6 +141,16 @@ public class CookingPlanController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody List<@Valid QuestionAnswer> answers) {
         return CookingPlanResponse.from(generateCookingPlan.submitDecisions(
+                principal.id(), planId, answers, idempotencyKey));
+    }
+
+    @PostMapping("/{planId}/decisions-async")
+    ResponseEntity<Object> submitDecisionsAsync(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody List<@Valid QuestionAnswer> answers) {
+        return asyncResponse(generateCookingPlan.submitDecisionsAsync(
                 principal.id(), planId, answers, idempotencyKey));
     }
 

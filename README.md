@@ -228,6 +228,10 @@ Secret values must be supplied by the environment and must never be committed.
 | `JWT_SECRET` | JWT signing secret |
 | `AGENT_SERVICE_BASE_URL` | Private Agent-service base URL |
 | `AGENT_SERVICE_TOKEN` | Internal service credential |
+| `COOKING_AGENT_ENABLED` | Enables Cooking Plan and recipe-import Agent calls |
+| `COOKING_AGENT_BASE_URL` | Private Cooking Agent base URL |
+| `COOKING_AGENT_SERVICE_TOKEN` | Credential shared only with the Cooking Agent |
+| `COOKING_TASK_POLL_ENABLED` | Enables Backend materialisation of asynchronous Cooking Agent tasks |
 | `INFERENCE_SERVICE_BASE_URL` | Private inference-service base URL |
 | `INFERENCE_SERVICE_TOKEN` | Internal service credential |
 | `S3_BUCKET` | Optional image bucket |

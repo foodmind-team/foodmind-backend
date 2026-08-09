@@ -1,16 +1,19 @@
 package com.foodmind.foodmindbackend.cooking.application;
 
+import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.application.port.InventoryQuery;
 import com.foodmind.foodmindbackend.cooking.application.port.KitchenResourceQuery;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanRequestContext;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPreferenceRules;
 import com.foodmind.foodmindbackend.cooking.domain.RecipeCandidate;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentApprovedDecision;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import com.foodmind.foodmindbackend.integration.agent.CookingAgentClientProperties;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -22,16 +25,19 @@ public class CookingAgentRequestAssembler {
     private final InventoryQuery inventoryQuery;
     private final KitchenResourceQuery kitchenResourceQuery;
     private final CookingAgentClientProperties properties;
+    private final CookingAgentPort cookingAgentPort;
 
     public CookingAgentRequestAssembler(
             RecipeTextRenderer renderer,
             InventoryQuery inventoryQuery,
             KitchenResourceQuery kitchenResourceQuery,
-            CookingAgentClientProperties properties) {
+            CookingAgentClientProperties properties,
+            CookingAgentPort cookingAgentPort) {
         this.renderer = renderer;
         this.inventoryQuery = inventoryQuery;
         this.kitchenResourceQuery = kitchenResourceQuery;
         this.properties = properties;
+        this.cookingAgentPort = cookingAgentPort;
     }
 
     public AgentGeneratePlanRequest assemble(
@@ -55,7 +61,50 @@ public class CookingAgentRequestAssembler {
                 List.of(),
                 "1.0",
                 null,
-                properties.getRegion());
+                properties.getRegion(),
+                preprocessCandidates(candidates, request.servings()));
+    }
+
+    /** Rebuilds a persisted request with the user's current inventory snapshot. */
+    public AgentGeneratePlanRequest refreshInventory(
+            UUID userId,
+            AgentGeneratePlanRequest base,
+            String requestId,
+            List<AgentApprovedDecision> approvedDecisions,
+            String planRevision) {
+        return new AgentGeneratePlanRequest(
+                sanitise(requestId),
+                base.userId(),
+                base.recipes(),
+                base.dietaryRestrictions(),
+                base.userAllergens(),
+                base.timeLimitMinutes(),
+                LocalDate.now(),
+                base.servingAt(),
+                base.servingTime(),
+                inventoryQuery.lots(userId),
+                kitchenResourceQuery.resources(userId),
+                approvedDecisions,
+                base.schemaVersion(),
+                planRevision,
+                base.region(),
+                base.preparsedCandidates());
+    }
+
+    /**
+     * Reuses the agent's NL parsing + gap-filling pipeline before generate():
+     * raw recipe text goes in, fully-populated structured candidates come out.
+     * The backend passes them back as {@code preparsed_candidates} so the
+     * agent never re-parses and never asks gap/assumption questions. When the
+     * preprocess call fails, we degrade gracefully — the agent's own parsing
+     * pipeline still runs inside generate (no user-facing regression).
+     */
+    private List<Map<String, Object>> preprocessCandidates(List<RecipeCandidate> candidates, int servings) {
+        try {
+            return cookingAgentPort.preprocess(recipeInputs(candidates, servings));
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
     }
 
     /** Renders each candidate as {@code recipes[].text}; also used as the persisted source snapshot. */

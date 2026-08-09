@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
@@ -22,8 +24,10 @@ import com.foodmind.foodmindbackend.integration.agent.CookingAgentClientProperti
 import com.foodmind.foodmindbackend.integration.agent.CookingAgentHttpAdapter;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +39,7 @@ import tools.jackson.databind.ObjectMapper;
 class CookingAgentHttpAdapterTest {
 
     private static final String GENERATE_PATH = "/internal/v1/agents/cooking-plan/generate";
+    private static final String PREPROCESS_PATH = "/internal/v1/agents/cooking-plan/preprocess";
     private static final String TASKS_PATH = "/internal/v2/cooking-plan/tasks";
 
     private static WireMockServer agent;
@@ -58,11 +63,43 @@ class CookingAgentHttpAdapterTest {
         properties.setEnabled(true);
         properties.setBaseUrl(agent.baseUrl());
         properties.setEndpointPath(GENERATE_PATH);
+        properties.setPreprocessPath(PREPROCESS_PATH);
         properties.setTasksBasePath(TASKS_PATH);
         properties.setServiceToken("test-token");
         properties.setReadTimeout(Duration.ofSeconds(30));
         properties.setMaxResponseBytes(1_048_576);
         adapter = new CookingAgentHttpAdapter(client(), properties, new ObjectMapper());
+    }
+
+    @Test
+    void mapsPreprocessFilledCandidates() {
+        agent.stubFor(post(urlPathEqualTo(PREPROCESS_PATH))
+                .withHeader("X-Internal-Token", equalTo("test-token"))
+                .willReturn(okJson("""
+                        {"recipes":[
+                          {"recipe_id":"r-tomato-eggs","dish_name":"Scrambled Eggs with Tomato",
+                           "original_servings":"2","source_language":"en",
+                           "ingredients":[
+                             {"raw_text":"2 eggs","name":"eggs","quantity":"2","unit":"piece",
+                              "preparation":null,"extraction_source":"EXPLICIT","confidence":"1.0"}
+                           ],
+                           "steps":[
+                             {"step_number":1,"instruction":"Heat oil in a pan.",
+                              "category":"heating","active_duration_minutes":null,
+                              "passive_duration_minutes":5,"heat_level":"HIGH",
+                              "target_temperature_c":null,"resources_hint":["pan"],
+                              "extraction_source":"EXPLICIT","confidence":"0.85"}
+                           ],
+                           "extraction_source":"RULE"}
+                        ]}
+                        """)));
+
+        List<Map<String, Object>> candidates = adapter.preprocess(List.of(
+                new AgentRecipeInput("r-tomato-eggs", "Scrambled Eggs with Tomato...", BigDecimal.valueOf(2))));
+
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.get(0).get("recipe_id")).isEqualTo("r-tomato-eggs");
+        assertThat(candidates.get(0).get("dish_name")).isEqualTo("Scrambled Eggs with Tomato");
     }
 
     @Test
@@ -91,7 +128,10 @@ class CookingAgentHttpAdapterTest {
                 .willReturn(okJson("""
                         {"plan_id":"p-1","status":"NEEDS_CONFIRMATION",
                          "assumptions":[{"text":"assuming 200 C for baking","confidence":"0.82","evidence":[]}],
-                         "repair_options":[],"questions":[],"confirmation_questions":[],"decisions":[],
+                         "repair_options":[{"option_id":"purchase-1","option_type":"purchase",
+                           "description":"Buy missing ingredients","changes":[],"effects":[],
+                           "revalidation_status":"validated","payload":{"items":[{"ingredient_name":"tofu"}]}}],
+                         "questions":[],"confirmation_questions":[],"decisions":[],
                          "plan_revision":"req-1:v1","safety_policy":null}
                         """)));
 
@@ -99,6 +139,8 @@ class CookingAgentHttpAdapterTest {
 
         assertThat(result.successful()).isTrue();
         assertThat(result.response().status()).isEqualTo("NEEDS_CONFIRMATION");
+        AgentConfirmationPlanResponse response = (AgentConfirmationPlanResponse) result.response();
+        assertThat(response.repairOptions().get(0).payload()).containsKey("items");
     }
 
     @Test
@@ -373,6 +415,7 @@ class CookingAgentHttpAdapterTest {
                 List.of(),
                 "1.0",
                 null,
-                "SG");
+                "SG",
+                List.of());
     }
 }

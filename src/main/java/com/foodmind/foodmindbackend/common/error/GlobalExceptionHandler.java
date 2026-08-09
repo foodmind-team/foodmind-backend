@@ -173,6 +173,11 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleDataIntegrity(
             DataIntegrityViolationException exception,
             HttpServletRequest request) {
+        org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class)
+                .error("data_integrity_violation path={} detail={}",
+                        request.getRequestURI(),
+                        exception.getMostSpecificCause().getMessage(),
+                        exception);
         return response(
                 HttpStatus.CONFLICT,
                 ErrorCode.CONFLICT,
@@ -215,6 +220,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiErrorResponse> handleUnexpected(Exception exception, HttpServletRequest request) {
+        org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class)
+                .error("unexpected_error path={} detail={}",
+                        request.getRequestURI(),
+                        exception.getMessage(),
+                        exception);
         return response(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ErrorCode.INTERNAL_ERROR,

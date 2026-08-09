@@ -162,6 +162,25 @@ class JdbcCookingPlanRepositoryTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void failedRoundTripDoesNotParseNonConformingRawAgentResponse() {
+        UUID userId = insertUser("failed-invalid-raw@example.test");
+        UUID recipeId = UUID.randomUUID();
+        AgentGeneratePlanRequest request = request(userId, "req-failed-invalid-raw-1", recipeId);
+        UUID planId = repository.createProcessing(userId, request, sources(recipeId), "trace-invalid-raw", json(request));
+
+        repository.completeFailed(
+                userId,
+                planId,
+                CookingAgentFailureCode.SCHEMA_MISMATCH,
+                null,
+                "{\"status\":\"NEEDS_CONFIRMATION\",\"unexpected\":true}");
+
+        CookingPlanResult result = repository.findOwned(userId, planId).orElseThrow();
+        assertThat(result.status()).isEqualTo("FAILED");
+        assertThat(result.errorCode()).isEqualTo("SCHEMA_MISMATCH");
+    }
+
+    @Test
     void ownerIsolationReturnsEmpty() {
         UUID owner = insertUser("owner@example.test");
         UUID other = insertUser("other@example.test");
@@ -351,7 +370,8 @@ class JdbcCookingPlanRepositoryTest extends PostgreSqlContainerSupport {
                 List.of(),
                 "1.0",
                 null,
-                "SG");
+                "SG",
+                List.of());
     }
 
     private List<AgentRecipeInput> sources(UUID recipeId) {
@@ -375,7 +395,8 @@ class JdbcCookingPlanRepositoryTest extends PostgreSqlContainerSupport {
                 List.of(new AgentDishCompletion("d-1", 54, 9, false)),
                 null,
                 "explanation",
-                "deterministic");
+                "deterministic",
+                List.of());
     }
 
     private String json(Object value) {
