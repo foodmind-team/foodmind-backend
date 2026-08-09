@@ -42,7 +42,7 @@ class CookingPlanResultMapperTest {
                 List.of(new AgentDishCompletion("d-1", 54, 9, false)),
                 new AgentSafetyPolicy("SG", "sg-v1", LocalDate.of(2026, 1, 1),
                         List.of(new AgentPolicySource("s-1", "title", "url"))),
-                "explanation", "deterministic");
+                "explanation", "deterministic", List.of());
 
         CookingPlanResult result = mapper.toResult(ready);
 

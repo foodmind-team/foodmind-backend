@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.cooking.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanRequestContext;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPreferenceRules;
 import com.foodmind.foodmindbackend.cooking.domain.RecipeCandidate;
@@ -10,10 +11,15 @@ import com.foodmind.foodmindbackend.cooking.domain.RecipeStepSnapshot;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInventoryLotSnapshot;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentKitchenResourceSnapshot;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
 import com.foodmind.foodmindbackend.integration.agent.CookingAgentClientProperties;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -21,12 +27,40 @@ class CookingAgentRequestAssemblerTest {
 
     private final RecipeTextRenderer renderer = new RecipeTextRenderer();
 
+    /** Stub port: preprocess returns no candidates (agent parses internally). */
+    private static final CookingAgentPort NO_PREPROCESS = new CookingAgentPort() {
+        @Override
+        public List<Map<String, Object>> preprocess(List<AgentRecipeInput> recipes) {
+            return List.of();
+        }
+
+        @Override
+        public CookingAgentResult generate(AgentGeneratePlanRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AgentTaskSubmission submitTask(AgentGeneratePlanRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AgentTaskSnapshot getTask(String taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AgentTaskSnapshot cancelTask(String taskId) {
+            throw new UnsupportedOperationException();
+        }
+    };
+
     @Test
     void assemblesNativeRequestFromContextAndCandidates() {
         CookingAgentClientProperties props = new CookingAgentClientProperties();
         props.setRegion("SG");
         CookingAgentRequestAssembler assembler = new CookingAgentRequestAssembler(
-                renderer, userId -> List.of(), userId -> List.of(), props);
+                renderer, userId -> List.of(), userId -> List.of(), props, NO_PREPROCESS);
 
         UUID recipeId = UUID.randomUUID();
         CookingPlanRequestContext request = new CookingPlanRequestContext(
@@ -48,6 +82,7 @@ class CookingAgentRequestAssemblerTest {
         assertThat(agentRequest.recipes().get(0).recipeId()).isEqualTo(recipeId.toString());
         assertThat(agentRequest.recipes().get(0).text())
                 .contains("Tofu Bowl")
+                .contains("Serves 2")
                 .contains("Ingredients:")
                 .contains("300 g Firm tofu")
                 .contains("Steps:")
@@ -71,7 +106,7 @@ class CookingAgentRequestAssemblerTest {
         CookingAgentClientProperties props = new CookingAgentClientProperties();
         props.setRegion("SG");
         CookingAgentRequestAssembler assembler = new CookingAgentRequestAssembler(
-                renderer, userId -> List.of(lot), userId -> List.of(resource), props);
+                renderer, userId -> List.of(lot), userId -> List.of(resource), props, NO_PREPROCESS);
 
         UUID recipeId = UUID.randomUUID();
         CookingPlanRequestContext request = new CookingPlanRequestContext(
@@ -93,7 +128,7 @@ class CookingAgentRequestAssemblerTest {
         CookingAgentClientProperties props = new CookingAgentClientProperties();
         props.setRegion("SG");
         CookingAgentRequestAssembler assembler = new CookingAgentRequestAssembler(
-                renderer, userId -> List.of(), userId -> List.of(), props);
+                renderer, userId -> List.of(), userId -> List.of(), props, NO_PREPROCESS);
 
         UUID recipeId = UUID.randomUUID();
         CookingPlanRequestContext request = new CookingPlanRequestContext(

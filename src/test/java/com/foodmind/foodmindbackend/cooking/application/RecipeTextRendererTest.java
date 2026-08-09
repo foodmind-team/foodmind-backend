@@ -26,6 +26,7 @@ class RecipeTextRendererTest {
 
         assertThat(text)
                 .contains("Tofu Bowl")
+                .contains("Serves 2")
                 .contains("Ingredients:")
                 .contains("300 g Firm tofu")
                 .contains("Steps:")
@@ -45,6 +46,7 @@ class RecipeTextRendererTest {
 
         assertThat(text)
                 .contains("My Curry")
+                .contains("Serves 2")
                 .contains("Curry paste")
                 .contains("Steps:")
                 .doesNotContain("Curry paste:");

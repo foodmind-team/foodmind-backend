@@ -37,6 +37,7 @@ public class JdbcInventoryQuery implements InventoryQuery {
                 FROM inventory_lot il
                 JOIN inventory_item ii ON ii.id = il.item_id
                 WHERE il.user_id = :userId
+                  AND il.archived_at IS NULL
                   AND (il.on_hand - il.reserved) > 0
                 ORDER BY il.expiry_date NULLS LAST, il.on_hand, il.id
                 """,

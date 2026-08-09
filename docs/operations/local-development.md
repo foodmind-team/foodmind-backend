@@ -37,6 +37,10 @@ DELEGATION_JWT_ISSUER=foodmind-backend-local
 DELEGATION_JWT_PUBLIC_KEY=<local-only-development-public-key-or-placeholder>
 AGENT_SERVICE_BASE_URL=http://localhost:8001
 AGENT_SERVICE_TOKEN=<local-only-token>
+COOKING_AGENT_ENABLED=true
+COOKING_AGENT_BASE_URL=http://localhost:8003
+COOKING_AGENT_SERVICE_TOKEN=<same-token-as-cooking-agent>
+COOKING_TASK_POLL_ENABLED=true
 INFERENCE_SERVICE_BASE_URL=http://localhost:8002
 INFERENCE_SERVICE_TOKEN=<local-only-token>
 # Only for plain-http local Web development; keep the production default true.
@@ -46,6 +50,14 @@ WEB_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
 ```
 
 Never commit the populated values.
+
+`COOKING_AGENT_SERVICE_TOKEN` must match
+`COOKING_PLAN_INTERNAL_SERVICE_TOKEN` in the Cooking Agent environment. Recipe
+import and Cooking Plan generation return a service-unavailable response when
+the Cooking Agent is disabled, unreachable, or uses a different token. Keep
+`COOKING_TASK_POLL_ENABLED=true` whenever Web uses asynchronous Cooking Plan
+generation; otherwise accepted tasks remain queued in Backend and cannot be
+materialised into terminal plans.
 
 When the Web client runs on `http://localhost`, set `WEB_COOKIE_SECURE=false`
 in the local profile so the refresh cookie can be sent by the browser. The
@@ -63,7 +75,7 @@ exact Web dev origin(s); wildcard origins are not supported with credentials.
 
 2. Backend
 3. Intelligence inference service
-4. Intelligence Agent service
+4. Intelligence Agent services, including the Cooking Agent on port `8003`
 5. Web or Android client
 
 The backend should remain usable for non-AI CRUD features if Intelligence is unavailable.

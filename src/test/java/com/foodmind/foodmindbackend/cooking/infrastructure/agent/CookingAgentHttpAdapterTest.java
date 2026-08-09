@@ -2,22 +2,32 @@ package com.foodmind.foodmindbackend.cooking.infrastructure.agent;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSnapshot;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskStatus;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException;
 import com.foodmind.foodmindbackend.integration.agent.CookingAgentClientProperties;
 import com.foodmind.foodmindbackend.integration.agent.CookingAgentHttpAdapter;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +39,8 @@ import tools.jackson.databind.ObjectMapper;
 class CookingAgentHttpAdapterTest {
 
     private static final String GENERATE_PATH = "/internal/v1/agents/cooking-plan/generate";
+    private static final String PREPROCESS_PATH = "/internal/v1/agents/cooking-plan/preprocess";
+    private static final String TASKS_PATH = "/internal/v2/cooking-plan/tasks";
 
     private static WireMockServer agent;
     private CookingAgentHttpAdapter adapter;
@@ -51,10 +63,43 @@ class CookingAgentHttpAdapterTest {
         properties.setEnabled(true);
         properties.setBaseUrl(agent.baseUrl());
         properties.setEndpointPath(GENERATE_PATH);
+        properties.setPreprocessPath(PREPROCESS_PATH);
+        properties.setTasksBasePath(TASKS_PATH);
         properties.setServiceToken("test-token");
         properties.setReadTimeout(Duration.ofSeconds(30));
         properties.setMaxResponseBytes(1_048_576);
         adapter = new CookingAgentHttpAdapter(client(), properties, new ObjectMapper());
+    }
+
+    @Test
+    void mapsPreprocessFilledCandidates() {
+        agent.stubFor(post(urlPathEqualTo(PREPROCESS_PATH))
+                .withHeader("X-Internal-Token", equalTo("test-token"))
+                .willReturn(okJson("""
+                        {"recipes":[
+                          {"recipe_id":"r-tomato-eggs","dish_name":"Scrambled Eggs with Tomato",
+                           "original_servings":"2","source_language":"en",
+                           "ingredients":[
+                             {"raw_text":"2 eggs","name":"eggs","quantity":"2","unit":"piece",
+                              "preparation":null,"extraction_source":"EXPLICIT","confidence":"1.0"}
+                           ],
+                           "steps":[
+                             {"step_number":1,"instruction":"Heat oil in a pan.",
+                              "category":"heating","active_duration_minutes":null,
+                              "passive_duration_minutes":5,"heat_level":"HIGH",
+                              "target_temperature_c":null,"resources_hint":["pan"],
+                              "extraction_source":"EXPLICIT","confidence":"0.85"}
+                           ],
+                           "extraction_source":"RULE"}
+                        ]}
+                        """)));
+
+        List<Map<String, Object>> candidates = adapter.preprocess(List.of(
+                new AgentRecipeInput("r-tomato-eggs", "Scrambled Eggs with Tomato...", BigDecimal.valueOf(2))));
+
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.get(0).get("recipe_id")).isEqualTo("r-tomato-eggs");
+        assertThat(candidates.get(0).get("dish_name")).isEqualTo("Scrambled Eggs with Tomato");
     }
 
     @Test
@@ -83,7 +128,10 @@ class CookingAgentHttpAdapterTest {
                 .willReturn(okJson("""
                         {"plan_id":"p-1","status":"NEEDS_CONFIRMATION",
                          "assumptions":[{"text":"assuming 200 C for baking","confidence":"0.82","evidence":[]}],
-                         "repair_options":[],"questions":[],"confirmation_questions":[],"decisions":[],
+                         "repair_options":[{"option_id":"purchase-1","option_type":"purchase",
+                           "description":"Buy missing ingredients","changes":[],"effects":[],
+                           "revalidation_status":"validated","payload":{"items":[{"ingredient_name":"tofu"}]}}],
+                         "questions":[],"confirmation_questions":[],"decisions":[],
                          "plan_revision":"req-1:v1","safety_policy":null}
                         """)));
 
@@ -91,6 +139,8 @@ class CookingAgentHttpAdapterTest {
 
         assertThat(result.successful()).isTrue();
         assertThat(result.response().status()).isEqualTo("NEEDS_CONFIRMATION");
+        AgentConfirmationPlanResponse response = (AgentConfirmationPlanResponse) result.response();
+        assertThat(response.repairOptions().get(0).payload()).containsKey("items");
     }
 
     @Test
@@ -206,6 +256,139 @@ class CookingAgentHttpAdapterTest {
         assertThat(result.failureCode()).isEqualTo(CookingAgentFailureCode.AGENT_DISABLED);
     }
 
+    @Test
+    void submitTaskMapsAcceptedSubmission() {
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH))
+                .withHeader("X-Internal-Token", equalTo("test-token"))
+                .withHeader("X-Request-ID", equalTo("req-async-1"))
+                .willReturn(aResponse().withStatus(202).withBody("""
+                        {"task_id":"task-1","status":"QUEUED",
+                         "location":"/internal/v2/cooking-plan/tasks/task-1",
+                         "request_id":"req-async-1"}
+                        """)));
+
+        AgentTaskSubmission submission = adapter.submitTask(request("req-async-1"));
+
+        assertThat(submission.taskId()).isEqualTo("task-1");
+        assertThat(submission.status()).isEqualTo(AgentTaskStatus.QUEUED);
+        assertThat(submission.location()).endsWith("/task-1");
+        assertThat(submission.requestId()).isEqualTo("req-async-1");
+    }
+
+    @Test
+    void submitTaskMapsConflictToConstraintConflict() {
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH))
+                .willReturn(aResponse().withStatus(409).withBody("{\"error_code\":\"TASK_ALREADY_EXISTS\"}")));
+
+        assertThatThrownBy(() -> adapter.submitTask(request("req-async-2")))
+                .isInstanceOfSatisfying(CookingAgentTaskException.class,
+                        exception -> assertThat(exception.getFailureCode())
+                                .isEqualTo(CookingAgentFailureCode.CONSTRAINT_CONFLICT));
+    }
+
+    @Test
+    void submitTaskMapsValidationErrorToSchemaMismatch() {
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH))
+                .willReturn(aResponse().withStatus(422).withBody("{\"error_code\":\"REQUEST_VALIDATION_ERROR\"}")));
+
+        assertThatThrownBy(() -> adapter.submitTask(request("req-async-3")))
+                .isInstanceOfSatisfying(CookingAgentTaskException.class,
+                        exception -> assertThat(exception.getFailureCode())
+                                .isEqualTo(CookingAgentFailureCode.SCHEMA_MISMATCH));
+    }
+
+    @Test
+    void submitTaskMapsOverloadToOverloaded() {
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH))
+                .willReturn(aResponse().withStatus(503).withBody("{\"error_code\":\"OVERLOADED\"}")));
+
+        assertThatThrownBy(() -> adapter.submitTask(request("req-async-4")))
+                .isInstanceOfSatisfying(CookingAgentTaskException.class,
+                        exception -> assertThat(exception.getFailureCode())
+                                .isEqualTo(CookingAgentFailureCode.OVERLOADED));
+    }
+
+    @Test
+    void submitTaskMapsReadTimeout() {
+        properties.setReadTimeout(Duration.ofMillis(100));
+        adapter = new CookingAgentHttpAdapter(client(), properties, new ObjectMapper());
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH))
+                .willReturn(aResponse().withFixedDelay(2_000).withBody("{}")));
+
+        assertThatThrownBy(() -> adapter.submitTask(request("req-async-5")))
+                .isInstanceOfSatisfying(CookingAgentTaskException.class,
+                        exception -> assertThat(exception.getFailureCode())
+                                .isEqualTo(CookingAgentFailureCode.TIMEOUT));
+    }
+
+    @Test
+    void getTaskMapsSnapshotWithProgressResultAndError() {
+        agent.stubFor(get(urlPathEqualTo(TASKS_PATH + "/task-9"))
+                .willReturn(okJson("""
+                        {"task_id":"task-9","status":"READY","request_id":"req-9",
+                         "location":"/internal/v2/cooking-plan/tasks/task-9",
+                         "progress":{"node":"solve_schedule","completed_steps":7,"message":"solving"},
+                         "result":{"plan_id":"p-9","status":"READY","solver_status":"OPTIMAL",
+                                   "makespan_minutes":54,"timeline":[],"completion_checklist":[],
+                                   "mise_en_place":[],"dish_completions":[]},
+                         "error":null}
+                        """)));
+
+        AgentTaskSnapshot snapshot = adapter.getTask("task-9");
+
+        assertThat(snapshot.taskId()).isEqualTo("task-9");
+        assertThat(snapshot.status()).isEqualTo(AgentTaskStatus.READY);
+        assertThat(snapshot.progress().node()).isEqualTo("solve_schedule");
+        assertThat(snapshot.progress().completedSteps()).isEqualTo(7);
+        assertThat(snapshot.resultJson()).isNotBlank().contains("\"status\":\"READY\"");
+        assertThat(snapshot.errorJson()).isNull();
+    }
+
+    @Test
+    void getTaskMapsErrorObjectToErrorJson() {
+        agent.stubFor(get(urlPathEqualTo(TASKS_PATH + "/task-10"))
+                .willReturn(okJson("""
+                        {"task_id":"task-10","status":"FAILED","request_id":"req-10",
+                         "location":"/internal/v2/cooking-plan/tasks/task-10",
+                         "progress":null,
+                         "result":null,
+                         "error":{"status":"FAILED","error_code":"SCHEDULE_UNKNOWN",
+                                  "correlation_id":"c-10","message":"timeout"}}
+                        """)));
+
+        AgentTaskSnapshot snapshot = adapter.getTask("task-10");
+
+        assertThat(snapshot.status()).isEqualTo(AgentTaskStatus.FAILED);
+        assertThat(snapshot.resultJson()).isNull();
+        assertThat(snapshot.errorJson()).isNotBlank().contains("SCHEDULE_UNKNOWN");
+    }
+
+    @Test
+    void getTaskMapsNotFound() {
+        agent.stubFor(get(urlPathEqualTo(TASKS_PATH + "/missing"))
+                .willReturn(aResponse().withStatus(404).withBody("{\"error_code\":\"TASK_NOT_FOUND\"}")));
+
+        assertThatThrownBy(() -> adapter.getTask("missing"))
+                .isInstanceOfSatisfying(CookingAgentTaskException.class,
+                        exception -> assertThat(exception.getFailureCode())
+                                .isEqualTo(CookingAgentFailureCode.AGENT_TASK_NOT_FOUND));
+    }
+
+    @Test
+    void cancelTaskMapsCancelledSnapshot() {
+        agent.stubFor(post(urlPathEqualTo(TASKS_PATH + "/task-11/cancel"))
+                .willReturn(okJson("""
+                        {"task_id":"task-11","status":"CANCELLED","request_id":"req-11",
+                         "location":"/internal/v2/cooking-plan/tasks/task-11",
+                         "progress":null,"result":null,"error":null}
+                        """)));
+
+        AgentTaskSnapshot snapshot = adapter.cancelTask("task-11");
+
+        assertThat(snapshot.taskId()).isEqualTo("task-11");
+        assertThat(snapshot.status()).isEqualTo(AgentTaskStatus.CANCELLED);
+    }
+
     private RestClient client() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.getConnectTimeout());
@@ -232,6 +415,7 @@ class CookingAgentHttpAdapterTest {
                 List.of(),
                 "1.0",
                 null,
-                "SG");
+                "SG",
+                List.of());
     }
 }

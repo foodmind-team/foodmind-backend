@@ -17,7 +17,7 @@ class CookingPlanResultValidatorTest {
     @Test
     void rejectsReadyWithoutMakespan() {
         AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
-                "p-1", "READY", "OPTIMAL", 0, List.of(), List.of(), List.of(), List.of(), null, null, null);
+                "p-1", "READY", "OPTIMAL", 0, List.of(), List.of(), List.of(), List.of(), null, null, null, List.of());
 
         assertThatThrownBy(() -> validator.validate(ready))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -27,7 +27,7 @@ class CookingPlanResultValidatorTest {
     @Test
     void rejectsReadyWithoutSolverStatus() {
         AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
-                "p-1", "READY", "", 54, List.of(), List.of(), List.of(), List.of(), null, null, null);
+                "p-1", "READY", "", 54, List.of(), List.of(), List.of(), List.of(), null, null, null, List.of());
 
         assertThatThrownBy(() -> validator.validate(ready))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -37,7 +37,7 @@ class CookingPlanResultValidatorTest {
     @Test
     void acceptsReadyWithValidContent() {
         AgentReadyPlanResponse ready = new AgentReadyPlanResponse(
-                "p-1", "READY", "OPTIMAL", 54, List.of(), List.of(), List.of(), List.of(), null, null, null);
+                "p-1", "READY", "OPTIMAL", 54, List.of(), List.of(), List.of(), List.of(), null, null, null, List.of());
 
         assertThatCode(() -> validator.validate(ready)).doesNotThrowAnyException();
     }

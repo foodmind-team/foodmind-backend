@@ -3,7 +3,7 @@ services:
     image: postgres:18.4
     container_name: foodmind-postgres
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-foodmind}
       POSTGRES_USER: ${POSTGRES_USER:-foodmind}
@@ -11,7 +11,7 @@ services:
       TZ: UTC
       PGTZ: UTC
     volumes:
-      - foodmind-postgres-data:/var/lib/postgresql/data
+      - foodmind-postgres-data:/var/lib/postgresql
     healthcheck:
       test:
         [

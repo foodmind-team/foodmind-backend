@@ -3,6 +3,7 @@ package com.foodmind.foodmindbackend.cooking.domain.agent;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
@@ -23,7 +24,8 @@ public record AgentGeneratePlanRequest(
         List<AgentApprovedDecision> approvedDecisions,
         String schemaVersion,
         String planRevision,
-        String region) {
+        String region,
+        List<Map<String, Object>> preparsedCandidates) {
 
     public AgentGeneratePlanRequest {
         recipes = recipes == null ? List.of() : List.copyOf(recipes);
@@ -32,6 +34,7 @@ public record AgentGeneratePlanRequest(
         inventoryLots = inventoryLots == null ? List.of() : List.copyOf(inventoryLots);
         kitchenResources = kitchenResources == null ? List.of() : List.copyOf(kitchenResources);
         approvedDecisions = approvedDecisions == null ? List.of() : List.copyOf(approvedDecisions);
+        preparsedCandidates = preparsedCandidates == null ? List.of() : List.copyOf(preparsedCandidates);
         schemaVersion = schemaVersion == null ? "1.0" : schemaVersion;
     }
 }

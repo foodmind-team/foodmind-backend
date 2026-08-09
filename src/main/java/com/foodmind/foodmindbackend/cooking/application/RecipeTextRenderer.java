@@ -18,6 +18,10 @@ public class RecipeTextRenderer {
     public String render(RecipeCandidate candidate) {
         StringBuilder sb = new StringBuilder();
         sb.append(candidate.name()).append('\n');
+        // The Agent scales quantities from the recipe's stated serving basis.
+        // Without this line its rule parser defaults to two servings, which can
+        // silently double a four-serving recipe's shopping quantities.
+        sb.append("Serves ").append(candidate.defaultServings()).append('\n');
         sb.append("Ingredients:\n");
         for (RecipeIngredientSnapshot ingredient : candidate.ingredients()) {
             if (ingredient.quantity() != null) {

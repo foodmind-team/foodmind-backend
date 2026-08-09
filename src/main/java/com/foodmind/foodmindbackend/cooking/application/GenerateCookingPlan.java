@@ -6,6 +6,8 @@ import com.foodmind.foodmindbackend.common.idempotency.IdempotencyRecord;
 import com.foodmind.foodmindbackend.common.idempotency.IdempotencyService;
 import com.foodmind.foodmindbackend.common.observability.CorrelationIdFilter;
 import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanAsyncAcceptedResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingContextQuery;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
@@ -21,8 +23,10 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanReques
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentRecipeInput;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentTaskSubmission;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentFailureCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentResult;
+import com.foodmind.foodmindbackend.cooking.domain.agent.CookingAgentTaskException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.ArrayList;
@@ -31,6 +35,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -48,6 +53,9 @@ public class GenerateCookingPlan {
 
     private static final String OPERATION = "COOKING_PLAN_GENERATE";
     private static final String OPERATION_DECIDE = "COOKING_PLAN_DECIDE";
+    private static final String OPERATION_ASYNC = "COOKING_PLAN_GENERATE_ASYNC";
+    private static final String OPERATION_DECIDE_ASYNC = "COOKING_PLAN_DECIDE_ASYNC";
+    private static final String OPERATION_SHOPPING_CONTINUE = "COOKING_PLAN_SHOPPING_CONTINUE";
     private static final int MAX_TEXT_ANSWER_LENGTH = 500;
 
     private final CookingContextQuery contextQuery;
@@ -95,6 +103,56 @@ public class GenerateCookingPlan {
     }
 
     /**
+     * Asynchronous submission ({@code POST /generate-async}): assembles the same
+     * agent request, persists a PROCESSING plan, submits the task to the agent's
+     * task API and records the generation row for the background coordinator.
+     * The idempotency record is completed as soon as the task is submitted (202)
+     * — later polling is background work. When the submission itself fails the
+     * plan is materialised as FAILED and returned as the terminal plan (200).
+     */
+    public AsyncSubmitResult submitAsync(UUID userId, CookingPlanRequestContext request, String idempotencyKey) {
+        CookingPreferenceRules mergedRules = mergedRules(contextQuery.preferenceRules(userId), request);
+        List<RecipeCandidate> candidates = contextQuery.controlledCandidates(userId, request, mergedRules);
+        if (candidates.isEmpty()) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Select at least one saved recipe.");
+        }
+        String traceId = traceId();
+        AgentGeneratePlanRequest agentRequest = assembler.assemble(userId, request, mergedRules, candidates, traceId);
+        // Hash the PUBLIC request snapshot (never the agent request, which embeds a per-call trace id).
+        String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
+        return submitPreparedAsync(userId, agentRequest,
+                assembler.recipeInputs(candidates, request.servings()), traceId,
+                OPERATION_ASYNC, idempotencyKey, requestHashSeed, null, null);
+    }
+
+    private static String taskLocation(UUID planId) {
+        return "/api/v1/cooking-plans/" + planId + "/task";
+    }
+
+    /**
+     * Outcome of an async submission: {@link Accepted} maps to {@code 202} with the
+     * task handle, {@link RejectedPlan} maps to {@code 200} with the terminal FAILED
+     * plan (submission failed before a task existed). Replay of a completed
+     * idempotency key reproduces whichever outcome the first attempt produced.
+     */
+    public sealed interface AsyncSubmitResult {
+
+        record Accepted(UUID planId, String status, String taskId) implements AsyncSubmitResult {
+        }
+
+        record RejectedPlan(CookingPlanResult plan) implements AsyncSubmitResult {
+        }
+
+        static Accepted accepted(UUID planId, String status, String taskId) {
+            return new Accepted(planId, status, taskId);
+        }
+
+        static RejectedPlan failedPlan(CookingPlanResult plan) {
+            return new RejectedPlan(plan);
+        }
+    }
+
+    /**
      * Submits decisions for a NEEDS_CONFIRMATION plan: guards the plan is still awaiting
      * confirmation, validates the answers against the presented confirmation questions,
      * maps them to approved decisions (rebinding the plan revision), then re-runs the
@@ -105,6 +163,67 @@ public class GenerateCookingPlan {
             UUID planId,
             List<SubmitDecisionsRequest.QuestionAnswer> answers,
             String idempotencyKey) {
+        DecisionSubmission submission = prepareDecisionSubmission(userId, planId, answers);
+        return generateAndPersist(userId, submission.request(), submission.request().recipes(),
+                submission.traceId(), OPERATION_DECIDE, idempotencyKey, submission.requestHashSeed(),
+                planId, submission.rootPlanId());
+    }
+
+    public AsyncSubmitResult submitDecisionsAsync(
+            UUID userId,
+            UUID planId,
+            List<SubmitDecisionsRequest.QuestionAnswer> answers,
+            String idempotencyKey) {
+        DecisionSubmission submission = prepareDecisionSubmission(userId, planId, answers);
+        return submitPreparedAsync(userId, submission.request(), submission.request().recipes(),
+                submission.traceId(), OPERATION_DECIDE_ASYNC, idempotencyKey,
+                submission.requestHashSeed(), planId, submission.rootPlanId());
+    }
+
+    /** Regenerates the original root request after real purchased inventory was persisted. */
+    public AsyncSubmitResult continueFromShoppingAsync(
+            UUID userId,
+            UUID sourcePlanId,
+            UUID rootPlanId,
+            UUID shoppingListId,
+            String idempotencyKey) {
+        CookingPlanRepository.PlanLineage sourceLineage = planRepository.findLineage(userId, sourcePlanId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!sourceLineage.rootPlanId().equals(rootPlanId)) {
+            throw new ApiException(ErrorCode.CONFLICT, "Shopping list does not match the cooking-plan root.");
+        }
+        String requestContext = planRepository.findRequestContext(userId, rootPlanId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        AgentGeneratePlanRequest base = parseRequestContext(requestContext);
+        String traceId = traceId();
+        AgentGeneratePlanRequest refreshed = assembler.refreshInventory(
+                userId, base, traceId, List.of(), null);
+        String hashSeed = toJson(Map.of(
+                "shoppingListId", shoppingListId,
+                "sourcePlanId", sourcePlanId,
+                "rootPlanId", rootPlanId));
+        return submitPreparedAsync(userId, refreshed, refreshed.recipes(), traceId,
+                OPERATION_SHOPPING_CONTINUE, idempotencyKey, hashSeed, sourcePlanId, rootPlanId);
+    }
+
+    /**
+     * Reconstructs the public async submission result for an already-created plan.
+     * This is used by idempotent shopping-list retries after the continuation plan
+     * has been attached to the completed list.
+     */
+    public AsyncSubmitResult resumeAsync(UUID userId, UUID planId) {
+        CookingPlanResult plan = planRepository.findOwned(userId, planId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return planRepository.findGeneration(planId)
+                .<AsyncSubmitResult>map(generation -> AsyncSubmitResult.accepted(
+                        plan.planId(), plan.status(), generation.taskId()))
+                .orElseGet(() -> AsyncSubmitResult.failedPlan(plan));
+    }
+
+    private DecisionSubmission prepareDecisionSubmission(
+            UUID userId,
+            UUID planId,
+            List<SubmitDecisionsRequest.QuestionAnswer> answers) {
         CookingPlanResult confirmationPlan = planRepository.findOwned(userId, planId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         if (!"NEEDS_CONFIRMATION".equals(confirmationPlan.status())) {
@@ -114,32 +233,68 @@ public class GenerateCookingPlan {
         if (storedRevision == null || storedRevision.isBlank()) {
             throw new ApiException(ErrorCode.CONFLICT, "The confirmation plan has no revision.");
         }
+        CookingPlanRepository.PlanLineage lineage = planRepository.findLineage(userId, planId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         String newRevision = nextRevision(storedRevision);
         String requestContext = planRepository.findRequestContext(userId, planId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         AgentGeneratePlanRequest base = parseRequestContext(requestContext);
-        List<AgentApprovedDecision> approvedDecisions =
-                mapAnswers(confirmationPlan, answers, newRevision);
+        List<AgentApprovedDecision> approvedDecisions = mapAnswers(confirmationPlan, answers, newRevision);
         String traceId = traceId();
-        AgentGeneratePlanRequest resubmission = new AgentGeneratePlanRequest(
-                sanitiseRequestId(traceId),
-                base.userId(),
-                base.recipes(),
-                base.dietaryRestrictions(),
-                base.userAllergens(),
-                base.timeLimitMinutes(),
-                base.cookingDate(),
-                base.servingAt(),
-                base.servingTime(),
-                base.inventoryLots(),
-                base.kitchenResources(),
-                approvedDecisions,
-                base.schemaVersion(),
-                newRevision,
-                base.region());
+        AgentGeneratePlanRequest resubmission = assembler.refreshInventory(
+                userId, base, traceId, approvedDecisions, newRevision);
         String requestHashSeed = toJson(decideSnapshot(planId, newRevision, answers));
-        return generateAndPersist(userId, resubmission, resubmission.recipes(),
-                traceId, OPERATION_DECIDE, idempotencyKey, requestHashSeed);
+        return new DecisionSubmission(resubmission, traceId, requestHashSeed, lineage.rootPlanId());
+    }
+
+    private AsyncSubmitResult submitPreparedAsync(
+            UUID userId,
+            AgentGeneratePlanRequest agentRequest,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String operation,
+            String idempotencyKey,
+            String requestHashSeed,
+            UUID parentPlanId,
+            UUID rootPlanId) {
+        String requestHash = idempotencyService.sha256Hex(requestHashSeed);
+        IdempotencyRecord idempotency = idempotencyService.begin(userId, operation, idempotencyKey, requestHash);
+
+        if ("COMPLETED".equals(idempotency.state()) && idempotency.resourceId() != null) {
+            CookingPlanResult plan = planRepository.findOwned(userId, idempotency.resourceId())
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            Optional<CookingPlanRepository.GenerationRow> generation = planRepository.findGeneration(plan.planId());
+            if (generation.isPresent()) {
+                return AsyncSubmitResult.accepted(plan.planId(), plan.status(), generation.get().taskId());
+            }
+            return AsyncSubmitResult.failedPlan(plan);
+        }
+        if (!"IN_PROGRESS".equals(idempotency.state())) {
+            throw new ApiException(ErrorCode.CONFLICT, "The idempotency record is not available for retry.");
+        }
+
+        UUID planId = parentPlanId == null
+                ? planRepository.createProcessing(userId, agentRequest, sources, traceId, toJson(agentRequest))
+                : planRepository.createProcessingChild(userId, agentRequest, sources, traceId, toJson(agentRequest),
+                        parentPlanId, rootPlanId);
+        AgentTaskSubmission taskSubmission;
+        try {
+            taskSubmission = cookingAgentPort.submitTask(agentRequest);
+        } catch (CookingAgentTaskException exception) {
+            CookingAgentFailureCode code = exception.getFailureCode() == null
+                    ? CookingAgentFailureCode.AGENT_INTERNAL_ERROR
+                    : exception.getFailureCode();
+            planRepository.completeFailed(userId, planId, code, null, null);
+            CookingPlanResult failed = planRepository.findOwned(userId, planId)
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            idempotencyService.complete(idempotency.id(), planId, 200, toJson(CookingPlanResponse.from(failed)));
+            return AsyncSubmitResult.failedPlan(failed);
+        }
+        planRepository.createGeneration(planId, taskSubmission.taskId());
+        CookingPlanAsyncAcceptedResponse acceptedBody = new CookingPlanAsyncAcceptedResponse(
+                planId, "PROCESSING", taskSubmission.taskId(), taskLocation(planId));
+        idempotencyService.complete(idempotency.id(), planId, 202, toJson(acceptedBody));
+        return AsyncSubmitResult.accepted(planId, "PROCESSING", taskSubmission.taskId());
     }
 
     private CookingPlanResult generateAndPersist(
@@ -150,6 +305,20 @@ public class GenerateCookingPlan {
             String operation,
             String idempotencyKey,
             String requestHashSeed) {
+        return generateAndPersist(userId, agentRequest, sources, traceId, operation,
+                idempotencyKey, requestHashSeed, null, null);
+    }
+
+    private CookingPlanResult generateAndPersist(
+            UUID userId,
+            AgentGeneratePlanRequest agentRequest,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String operation,
+            String idempotencyKey,
+            String requestHashSeed,
+            UUID parentPlanId,
+            UUID rootPlanId) {
         String requestHash = idempotencyService.sha256Hex(requestHashSeed);
         IdempotencyRecord idempotency = idempotencyService.begin(userId, operation, idempotencyKey, requestHash);
 
@@ -161,7 +330,10 @@ public class GenerateCookingPlan {
             throw new ApiException(ErrorCode.CONFLICT, "The idempotency record is not available for retry.");
         }
 
-        UUID planId = planRepository.createProcessing(userId, agentRequest, sources, traceId, toJson(agentRequest));
+        UUID planId = parentPlanId == null
+                ? planRepository.createProcessing(userId, agentRequest, sources, traceId, toJson(agentRequest))
+                : planRepository.createProcessingChild(userId, agentRequest, sources, traceId, toJson(agentRequest),
+                        parentPlanId, rootPlanId);
 
         CookingAgentResult agentResult = invokeAgentOutsideTransaction(agentRequest);
         if (!agentResult.successful()) {
@@ -202,6 +374,13 @@ public class GenerateCookingPlan {
             meterRegistry.counter("foodmind.cooking.agent.failure", "code", failureCode).increment();
         }
         return result;
+    }
+
+    private record DecisionSubmission(
+            AgentGeneratePlanRequest request,
+            String traceId,
+            String requestHashSeed,
+            UUID rootPlanId) {
     }
 
     private CookingAgentFailureCode failureCode(CookingAgentResult result) {

@@ -42,6 +42,10 @@ for node in walk(document):
         if referenced_schema not in schemas:
             fail(f"unresolved schema reference: {reference}")
 required_paths = {
+    "/recipe-imports": {"post"},
+    "/recipe-imports/{importId}": {"get"},
+    "/recipe-imports/{importId}/answers": {"post"},
+    "/recipe-imports/{importId}/confirm": {"post"},
     "/recipes": {"get", "post"},
     "/recipes/{id}": {"get", "put", "delete"},
     "/cooking-plans/generate": {"post"},
@@ -56,7 +60,7 @@ for path, methods in required_paths.items():
         if not paths[path][method].get("operationId"):
             fail(f"{method.upper()} {path} must declare operationId")
 
-for schema in ("UserRecipeRequest", "UserRecipeResponse", "UserRecipePageResponse", "GenerateCookingPlanRequest", "CookingPlanResponse"):
+for schema in ("CreateRecipeImportRequest", "RecipeImportResponse", "UserRecipeRequest", "UserRecipeResponse", "UserRecipePageResponse", "GenerateCookingPlanRequest", "CookingPlanResponse"):
     if schema not in schemas:
         fail(f"missing schema: {schema}")
 
