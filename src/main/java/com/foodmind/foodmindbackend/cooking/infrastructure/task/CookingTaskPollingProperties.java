@@ -5,14 +5,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Background polling of async cooking-agent tasks ({@code foodmind.cooking.task.*}).
- * Polling is opt-in: {@code poll-enabled} defaults to false so the existing
- * synchronous {@code /generate} behaviour is unchanged out of the box.
+ * Polling defaults on because the Web client submits asynchronous tasks and
+ * relies on Backend materialisation to observe terminal Agent results.
  */
 @ConfigurationProperties(prefix = "foodmind.cooking.task")
 public class CookingTaskPollingProperties {
 
-    private boolean pollEnabled;
-    private Duration pollInterval = Duration.ofSeconds(5);
+    private boolean pollEnabled = true;
+    private Duration pollInterval = Duration.ofSeconds(2);
     private int pollBatch = 20;
     private int maxAttempts = 5;
     private Duration maxBackoff = Duration.ofSeconds(60);

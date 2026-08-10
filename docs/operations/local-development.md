@@ -41,6 +41,7 @@ COOKING_AGENT_ENABLED=true
 COOKING_AGENT_BASE_URL=http://localhost:8003
 COOKING_AGENT_SERVICE_TOKEN=<same-token-as-cooking-agent>
 COOKING_TASK_POLL_ENABLED=true
+COOKING_TASK_POLL_INTERVAL=2s
 CHAT_AGENT_ENABLED=true
 CHAT_AGENT_BASE_URL=http://localhost:8004
 CHAT_AGENT_SERVICE_TOKEN=<same-token-as-chat-agent>
@@ -58,9 +59,10 @@ Never commit the populated values.
 `COOKING_PLAN_INTERNAL_SERVICE_TOKEN` in the Cooking Agent environment. Recipe
 import and Cooking Plan generation return a service-unavailable response when
 the Cooking Agent is disabled, unreachable, or uses a different token. Keep
-`COOKING_TASK_POLL_ENABLED=true` whenever Web uses asynchronous Cooking Plan
-generation; otherwise accepted tasks remain queued in Backend and cannot be
-materialised into terminal plans.
+Cooking task polling defaults to enabled at a two-second interval. Set
+`COOKING_TASK_POLL_ENABLED=false` only for a deliberately synchronous or
+isolated environment; otherwise accepted tasks cannot be materialised into
+terminal plans.
 
 When the Web client runs on `http://localhost`, set `WEB_COOKIE_SECURE=false`
 in the local profile so the refresh cookie can be sent by the browser. The
