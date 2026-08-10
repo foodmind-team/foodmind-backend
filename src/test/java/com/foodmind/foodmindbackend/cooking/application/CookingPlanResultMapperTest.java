@@ -86,6 +86,38 @@ class CookingPlanResultMapperTest {
     }
 
     @Test
+    void synthesisesStrategyQuestionWhenLegacyConfirmationOmitsStructuredQuestions() {
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                "p-1", "NEEDS_CONFIRMATION",
+                List.of(),
+                List.of(
+                        new AgentRepairOption("purchase-1", "purchase", "Buy missing ingredients",
+                                List.of("Buy 600 g Firm tofu"), List.of("Inventory can satisfy the plan"), "validated"),
+                        new AgentRepairOption("reduce-1", "reduce_servings", "Reduce to 1 serving",
+                                List.of("servings 4 -> 1"), List.of("Recheck inventory"), "validated")),
+                List.of("Inventory is insufficient. Choose how to continue."),
+                List.of(),
+                List.of(
+                        new AgentDecision("purchase-1", "purchase", Map.of("items", List.of()), "p-1:v1"),
+                        new AgentDecision("reduce-1", "reduce_servings", Map.of("servings", 1), "p-1:v1")),
+                "p-1:v1", null);
+
+        CookingPlanResult result = mapper.toResult(confirmation);
+
+        assertThat(result.confirmationQuestions()).hasSize(1);
+        assertThat(result.confirmationQuestions().get(0).fieldPath()).isEqualTo("repair_strategy");
+        assertThat(result.confirmationQuestions().get(0).questionId()).isEqualTo("repair:strategy");
+        assertThat(result.confirmationQuestions().get(0).required()).isTrue();
+        assertThat(result.confirmationQuestions().get(0).options())
+                .extracting(CookingPlanResult.QuestionOption::value)
+                .containsExactly("purchase-1", "reduce-1");
+        assertThat(result.confirmationQuestions().get(0).options())
+                .extracting(CookingPlanResult.QuestionOption::label)
+                .containsExactly("Buy missing ingredients", "Reduce to 1 serving");
+        assertThat(result.confirmationQuestions().get(0).suggestedValue()).isEqualTo("purchase-1");
+    }
+
+    @Test
     void mapsInfeasibleResponse() {
         AgentInfeasiblePlanResponse infeasible = new AgentInfeasiblePlanResponse(
                 "p-1", "INFEASIBLE",

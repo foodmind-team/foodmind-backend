@@ -180,7 +180,7 @@ public class GenerateCookingPlan {
                 submission.requestHashSeed(), planId, submission.rootPlanId());
     }
 
-    /** Regenerates the original root request after real purchased inventory was persisted. */
+    /** Regenerates the plan that produced the list after real purchased inventory was persisted. */
     public AsyncSubmitResult continueFromShoppingAsync(
             UUID userId,
             UUID sourcePlanId,
@@ -192,7 +192,7 @@ public class GenerateCookingPlan {
         if (!sourceLineage.rootPlanId().equals(rootPlanId)) {
             throw new ApiException(ErrorCode.CONFLICT, "Shopping list does not match the cooking-plan root.");
         }
-        String requestContext = planRepository.findRequestContext(userId, rootPlanId)
+        String requestContext = planRepository.findRequestContext(userId, sourcePlanId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         AgentGeneratePlanRequest base = parseRequestContext(requestContext);
         String traceId = traceId();

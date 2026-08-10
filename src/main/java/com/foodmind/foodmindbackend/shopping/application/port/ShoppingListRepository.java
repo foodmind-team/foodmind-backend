@@ -15,6 +15,8 @@ public interface ShoppingListRepository {
 
     Optional<ShoppingList> findOwnedBySourcePlan(UUID userId, UUID sourcePlanId);
 
+    Optional<ShoppingList> findOwnedByRootPlan(UUID userId, UUID rootPlanId);
+
     ShoppingListPage findOwnedPage(UUID userId, String status, int page, int size);
 
     Optional<ShoppingList> updateItem(

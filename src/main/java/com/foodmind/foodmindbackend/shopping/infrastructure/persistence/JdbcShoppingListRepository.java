@@ -85,6 +85,13 @@ public class JdbcShoppingListRepository implements ShoppingListRepository {
     }
 
     @Override
+    public Optional<ShoppingList> findOwnedByRootPlan(UUID userId, UUID rootPlanId) {
+        return findLists("sl.root_plan_id = :rootPlanId AND sl.user_id = :userId ORDER BY sl.updated_at DESC",
+                new MapSqlParameterSource().addValue("rootPlanId", rootPlanId).addValue("userId", userId))
+                .stream().findFirst();
+    }
+
+    @Override
     public ShoppingListPage findOwnedPage(UUID userId, String status, int page, int size) {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("userId", userId)

@@ -200,6 +200,27 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void legacyConfirmationResponseIsProjectedAsStructuredStrategyQuestion() throws Exception {
+        AGENT_RESPONSE.set(CookingPlanFlowTest::legacyConfirmationAgentResult);
+        String accessToken = read(register("cooking-legacy-confirm@example.test", "Cooking Legacy Confirm"), "$.accessToken");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-legacy-confirm-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(fourServingRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andExpect(jsonPath("$.questions[0]").value("Inventory is insufficient. Choose how to continue."))
+                .andExpect(jsonPath("$.confirmationQuestions[0].questionId").value("repair:strategy"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].fieldPath").value("repair_strategy"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].options[0].value").value("purchase-1"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].options[0].label").value("Buy missing ingredients"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].options[1].value").value("reduce-1"))
+                .andExpect(jsonPath("$.confirmationQuestions[0].options[1].label").value("Reduce to 1 serving"));
+    }
+
+    @Test
     void confirmationResubmissionFlowSubmitsDecisionsAndGeneratesNewRevision() throws Exception {
         AtomicReference<AgentGeneratePlanRequest> lastRequest = new AtomicReference<>();
         AGENT_RESPONSE.set(request -> {
@@ -743,6 +764,28 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                                 "Reduce servings?", "CHOICE",
                                 List.of(new AgentQuestionOption("reduce-1", "Reduce servings", false)),
                                 false, "reduce-1")),
+                List.of(
+                        new AgentDecision("purchase-1", "purchase", purchasePayload, revision),
+                        new AgentDecision("reduce-1", "reduce_servings", Map.of("servings", 1), revision)),
+                revision, null);
+        return CookingAgentResult.of(confirmation, json(confirmation));
+    }
+
+    private static CookingAgentResult legacyConfirmationAgentResult(AgentGeneratePlanRequest request) {
+        String revision = request.requestId() + ":v1";
+        Map<String, Object> purchasePayload = Map.of("items", List.of(Map.of(
+                "ingredient_name", "Firm tofu",
+                "quantity", 600,
+                "unit", "g")));
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                request.requestId(), "NEEDS_CONFIRMATION", List.of(),
+                List.of(
+                        new AgentRepairOption("purchase-1", "purchase", "Buy missing ingredients",
+                                List.of("Buy 600 g Firm tofu"), List.of("Inventory can satisfy the plan"), "validated"),
+                        new AgentRepairOption("reduce-1", "reduce_servings", "Reduce to 1 serving",
+                                List.of("servings 4 -> 1"), List.of("Recheck inventory"), "validated")),
+                List.of("Inventory is insufficient. Choose how to continue."),
+                List.of(),
                 List.of(
                         new AgentDecision("purchase-1", "purchase", purchasePayload, revision),
                         new AgentDecision("reduce-1", "reduce_servings", Map.of("servings", 1), revision)),
