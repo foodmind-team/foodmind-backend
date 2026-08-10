@@ -156,9 +156,10 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                     command.userMessageId(),
                     command.traceId(),
                     "chat-fallback",
-                    ChatRoute.OUT_OF_SCOPE,
-                    ChatResponseStatus.UNSUPPORTED,
-                    "I need authorised FoodMind records, products, or places before I can provide a grounded answer in Chat.",
+                    ChatRoute.NAVIGATION,
+                    ChatResponseStatus.FALLBACK_SUCCEEDED,
+                    "I can help you navigate FoodMind. Share a record, product, or place for a grounded answer, "
+                            + "or use Recommendations to choose food and Cooking to build a plan.",
                     List.of());
         }
         return ChatAgentGenerationResult.success(
