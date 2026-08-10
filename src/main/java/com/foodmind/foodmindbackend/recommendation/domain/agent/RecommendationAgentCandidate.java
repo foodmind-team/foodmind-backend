@@ -15,7 +15,7 @@ import java.util.UUID;
 
 public record RecommendationAgentCandidate(
         UUID candidateId,
-        UUID placeMealId,
+        String candidateKey,
         CandidateEvidence evidence,
         Map<String, Object> featureSnapshot) {
 

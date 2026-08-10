@@ -13,13 +13,13 @@ import java.util.UUID;
 
 public record AgentRecommendationCandidateRequest(
         UUID candidateId,
-        UUID placeMealId,
+        String candidateKey,
         Map<String, Object> features) {
 
     public static AgentRecommendationCandidateRequest from(RecommendationAgentCandidate candidate) {
         return new AgentRecommendationCandidateRequest(
                 candidate.candidateId(),
-                candidate.placeMealId(),
+                candidate.candidateKey(),
                 candidate.featureSnapshot());
     }
 }

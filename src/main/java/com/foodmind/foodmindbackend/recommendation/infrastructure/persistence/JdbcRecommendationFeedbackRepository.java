@@ -40,14 +40,16 @@ public class JdbcRecommendationFeedbackRepository implements RecommendationFeedb
                        session.user_id,
                        candidate.id AS candidate_id,
                        candidate.place_meal_id,
-                       offering.meal_id,
-                       offering.place_id,
+                       COALESCE(offering.meal_id, source_record.meal_id) AS meal_id,
+                       COALESCE(offering.place_id, source_record.place_id) AS place_id,
                        candidate.eligibility_status
                 FROM recommendation_session AS session
                 JOIN recommendation_candidate AS candidate
                   ON candidate.session_id = session.id
-                JOIN place_meal AS offering
+                LEFT JOIN place_meal AS offering
                   ON offering.id = candidate.place_meal_id
+                LEFT JOIN food_record AS source_record
+                  ON source_record.id = candidate.food_record_id
                 WHERE session.id = :sessionId
                   AND session.user_id = :userId
                   AND candidate.id = :candidateId

@@ -23,7 +23,7 @@ public interface RecommendationSessionRepository {
 
     UUID createSession(UUID userId, RecommendationRequestContext request, Map<String, Object> requestSnapshot, UUID correlationId);
 
-    Map<UUID, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion);
+    Map<String, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion);
 
     void markProcessing(UUID sessionId);
 

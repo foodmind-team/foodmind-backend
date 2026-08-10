@@ -14,7 +14,9 @@ import java.util.UUID;
 
 public record RecommendationCandidateResult(
         UUID candidateId,
+        CandidateSourceType candidateSourceType,
         UUID placeMealId,
+        UUID foodRecordId,
         UUID mealId,
         String mealName,
         UUID placeId,
@@ -25,7 +27,10 @@ public record RecommendationCandidateResult(
         int rank,
         List<ReasonCode> reasonCodes,
         String explanation,
-        BigDecimal fallbackScore) {
+        BigDecimal fallbackScore,
+        String recordOwnerDisplayName,
+        java.time.OffsetDateTime recordOccurredAt,
+        boolean historicalPrice) {
 
     public RecommendationCandidateResult {
         reasonCodes = List.copyOf(reasonCodes);

@@ -52,7 +52,7 @@ public class RecommendationTransactionService {
             String traceId,
             UUID correlationId) {
         UUID sessionId = sessionRepository.createSession(userId, request, requestSnapshot, correlationId);
-        Map<UUID, UUID> candidateIdsByPlaceMeal = sessionRepository.insertEvaluations(
+        Map<String, UUID> candidateIdsBySource = sessionRepository.insertEvaluations(
                 sessionId,
                 evaluatedCandidates,
                 FEATURE_SCHEMA_VERSION);
@@ -67,7 +67,7 @@ public class RecommendationTransactionService {
                 preferenceSnapshot(preferences),
                 evaluatedCandidates.stream()
                         .filter(EvaluatedCandidate::eligible)
-                        .map(candidate -> toAgentCandidate(candidate, candidateIdsByPlaceMeal))
+                        .map(candidate -> toAgentCandidate(candidate, candidateIdsBySource))
                         .toList());
     }
 
@@ -95,11 +95,11 @@ public class RecommendationTransactionService {
 
     private RecommendationAgentCandidate toAgentCandidate(
             EvaluatedCandidate candidate,
-            Map<UUID, UUID> candidateIdsByPlaceMeal) {
-        UUID candidateId = candidateIdsByPlaceMeal.get(candidate.evidence().placeMealId());
+            Map<String, UUID> candidateIdsBySource) {
+        UUID candidateId = candidateIdsBySource.get(candidate.evidence().sourceKey());
         return new RecommendationAgentCandidate(
                 candidateId,
-                candidate.evidence().placeMealId(),
+                candidate.evidence().sourceKey(),
                 candidate.evidence(),
                 featureSnapshot(candidate.evidence()));
     }
@@ -140,6 +140,8 @@ public class RecommendationTransactionService {
         snapshot.put("groupRecordCount", evidence.groupRecordCount());
         snapshot.put("groupAverageRating", evidence.groupAverageRating());
         snapshot.put("distanceKm", evidence.distanceKm());
+        snapshot.put("candidateSourceType", evidence.sourceType().name());
+        snapshot.put("historicalPrice", evidence.historicalPrice());
         return snapshot;
     }
 
