@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.recommendation.infrastructure.persistence;
 
 import com.foodmind.foodmindbackend.recommendation.application.port.RecommendationSessionRepository;
 import com.foodmind.foodmindbackend.recommendation.domain.CandidateEvidence;
+import com.foodmind.foodmindbackend.recommendation.domain.CandidateSourceType;
 import com.foodmind.foodmindbackend.recommendation.domain.CleanlinessEvidence;
 import com.foodmind.foodmindbackend.recommendation.domain.EvaluatedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.MoneyAmount;
@@ -88,32 +89,34 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     }
 
     @Override
-    public Map<UUID, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion) {
-        Map<UUID, UUID> candidateIdsByPlaceMeal = new LinkedHashMap<>();
+    public Map<String, UUID> insertEvaluations(UUID sessionId, List<EvaluatedCandidate> candidates, String featureSchemaVersion) {
+        Map<String, UUID> candidateIdsBySource = new LinkedHashMap<>();
         for (EvaluatedCandidate candidate : candidates) {
             UUID candidateId = UUID.randomUUID();
-            candidateIdsByPlaceMeal.put(candidate.evidence().placeMealId(), candidateId);
+            candidateIdsBySource.put(candidate.evidence().sourceKey(), candidateId);
             jdbcTemplate.update("""
                     INSERT INTO recommendation_candidate (
-                        id, session_id, place_meal_id, eligibility_status, filter_code,
+                        id, session_id, candidate_source_type, place_meal_id, food_record_id, eligibility_status, filter_code,
                         feature_schema_version, feature_snapshot, evidence_snapshot
                     )
                     VALUES (
-                        :id, :sessionId, :placeMealId, :eligibilityStatus, :filterCode,
+                        :id, :sessionId, :sourceType, :placeMealId, :foodRecordId, :eligibilityStatus, :filterCode,
                         :featureSchemaVersion, CAST(:featureSnapshot AS jsonb), CAST(:evidenceSnapshot AS jsonb)
                     )
                     """,
                     new MapSqlParameterSource()
                             .addValue("id", candidateId)
                             .addValue("sessionId", sessionId)
+                            .addValue("sourceType", candidate.evidence().sourceType().name())
                             .addValue("placeMealId", candidate.evidence().placeMealId())
+                            .addValue("foodRecordId", candidate.evidence().foodRecordId())
                             .addValue("eligibilityStatus", candidate.eligible() ? "ELIGIBLE" : "FILTERED")
                             .addValue("filterCode", candidate.filterCode() == null ? null : candidate.filterCode().name())
                             .addValue("featureSchemaVersion", featureSchemaVersion)
                             .addValue("featureSnapshot", toJson(featureSnapshot(candidate.evidence())))
                             .addValue("evidenceSnapshot", toJson(evidenceSnapshot(candidate.evidence()))));
         }
-        return candidateIdsByPlaceMeal;
+        return candidateIdsBySource;
     }
 
     @Override
@@ -181,7 +184,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
             String agentTraceId) {
         lockProcessingSession(userId, sessionId);
         for (SelectedCandidate selectedCandidate : selectedCandidates) {
-            UUID candidateId = candidateId(sessionId, selectedCandidate.candidate().evidence().placeMealId());
+            UUID candidateId = candidateId(sessionId, selectedCandidate.candidate().evidence());
             insertReasons(candidateId, selectedCandidate);
             jdbcTemplate.update("""
                     UPDATE recommendation_candidate
@@ -289,17 +292,21 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         return count == null ? 0 : count;
     }
 
-    private UUID candidateId(UUID sessionId, UUID placeMealId) {
+    private UUID candidateId(UUID sessionId, CandidateEvidence evidence) {
         return jdbcTemplate.queryForObject("""
                 SELECT id
                 FROM recommendation_candidate
                 WHERE session_id = :sessionId
-                  AND place_meal_id = :placeMealId
+                  AND candidate_source_type = :sourceType
+                  AND ((:placeMealId IS NOT NULL AND place_meal_id = :placeMealId)
+                       OR (:foodRecordId IS NOT NULL AND food_record_id = :foodRecordId))
                   AND eligibility_status = 'ELIGIBLE'
                 """,
                 new MapSqlParameterSource()
                         .addValue("sessionId", sessionId)
-                        .addValue("placeMealId", placeMealId),
+                        .addValue("sourceType", evidence.sourceType().name())
+                        .addValue("placeMealId", evidence.placeMealId())
+                        .addValue("foodRecordId", evidence.foodRecordId()),
                 UUID.class);
     }
 
@@ -354,21 +361,26 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     private List<RecommendationCandidateResult> candidates(UUID sessionId) {
         List<RecommendationCandidateResult> results = jdbcTemplate.query("""
                 SELECT rc.id AS candidate_id,
+                       rc.candidate_source_type,
                        rc.place_meal_id,
-                       pm.meal_id,
-                       m.name AS meal_name,
-                       pm.place_id,
-                       p.name AS place_name,
-                       p.area,
-                       pm.price,
-                       pm.currency,
+                       rc.food_record_id,
+                       COALESCE(pm.meal_id, (rc.evidence_snapshot ->> 'mealId')::uuid) AS meal_id,
+                       COALESCE(m.name, rc.evidence_snapshot ->> 'mealName') AS meal_name,
+                       COALESCE(pm.place_id, (rc.evidence_snapshot ->> 'placeId')::uuid) AS place_id,
+                       COALESCE(p.name, rc.evidence_snapshot ->> 'placeName') AS place_name,
+                       COALESCE(p.area, rc.evidence_snapshot ->> 'area') AS area,
+                       COALESCE(pm.price, (rc.evidence_snapshot ->> 'priceAmount')::numeric) AS price,
+                       COALESCE(pm.currency, rc.evidence_snapshot ->> 'priceCurrency') AS currency,
+                       rc.evidence_snapshot ->> 'recordOwnerDisplayName' AS record_owner_display_name,
+                       (rc.evidence_snapshot ->> 'recordOccurredAt')::timestamptz AS record_occurred_at,
+                       COALESCE((rc.evidence_snapshot ->> 'historicalPrice')::boolean, false) AS historical_price,
                        rc.candidate_type,
                        rc.rank,
                        rc.fallback_score
                 FROM recommendation_candidate rc
-                JOIN place_meal pm ON pm.id = rc.place_meal_id
-                JOIN meal m ON m.id = pm.meal_id
-                JOIN place p ON p.id = pm.place_id
+                LEFT JOIN place_meal pm ON pm.id = rc.place_meal_id
+                LEFT JOIN meal m ON m.id = pm.meal_id
+                LEFT JOIN place p ON p.id = pm.place_id
                 WHERE rc.session_id = :sessionId
                   AND rc.eligibility_status = 'RETURNED'
                 ORDER BY rc.rank ASC
@@ -379,7 +391,9 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         return results.stream()
                 .map(candidate -> new RecommendationCandidateResult(
                         candidate.candidateId(),
+                        candidate.candidateSourceType(),
                         candidate.placeMealId(),
+                        candidate.foodRecordId(),
                         candidate.mealId(),
                         candidate.mealName(),
                         candidate.placeId(),
@@ -390,7 +404,10 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                         candidate.rank(),
                         reasons.getOrDefault(candidate.candidateId(), List.of()),
                         candidate.explanation(),
-                        candidate.fallbackScore()))
+                        candidate.fallbackScore(),
+                        candidate.recordOwnerDisplayName(),
+                        candidate.recordOccurredAt(),
+                        candidate.historicalPrice()))
                 .toList();
     }
 
@@ -420,18 +437,29 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         String type = rs.getString("candidate_type");
         return new RecommendationCandidateResult(
                 rs.getObject("candidate_id", UUID.class),
+                CandidateSourceType.valueOf(rs.getString("candidate_source_type")),
                 rs.getObject("place_meal_id", UUID.class),
+                rs.getObject("food_record_id", UUID.class),
                 rs.getObject("meal_id", UUID.class),
                 rs.getString("meal_name"),
                 rs.getObject("place_id", UUID.class),
                 rs.getString("place_name"),
                 rs.getString("area"),
-                new MoneyAmount(rs.getBigDecimal("price"), rs.getString("currency").trim()),
+                money(rs),
                 RecommendationType.valueOf(type),
                 rs.getInt("rank"),
                 List.of(),
                 explanationFromSnapshot(rs.getObject("candidate_id", UUID.class)),
-                rs.getBigDecimal("fallback_score"));
+                rs.getBigDecimal("fallback_score"),
+                rs.getString("record_owner_display_name"),
+                rs.getObject("record_occurred_at", OffsetDateTime.class),
+                rs.getBoolean("historical_price"));
+    }
+
+    private MoneyAmount money(ResultSet rs) throws SQLException {
+        BigDecimal amount = rs.getBigDecimal("price");
+        String currency = rs.getString("currency");
+        return amount == null || currency == null ? null : new MoneyAmount(amount, currency.trim());
     }
 
     private String explanationFromSnapshot(UUID candidateId) {
@@ -476,6 +504,8 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     private Map<String, Object> evidenceSnapshot(CandidateEvidence evidence) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("placeMealId", evidence.placeMealId());
+        snapshot.put("candidateSourceType", evidence.sourceType().name());
+        snapshot.put("foodRecordId", evidence.foodRecordId());
         snapshot.put("mealId", evidence.mealId());
         snapshot.put("mealName", evidence.mealName());
         snapshot.put("mealType", evidence.mealType());
@@ -483,7 +513,11 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         snapshot.put("placeId", evidence.placeId());
         snapshot.put("placeName", evidence.placeName());
         snapshot.put("area", evidence.area());
-        snapshot.put("price", evidence.price());
+        snapshot.put("priceAmount", evidence.price() == null ? null : evidence.price().amount());
+        snapshot.put("priceCurrency", evidence.price() == null ? null : evidence.price().currency());
+        snapshot.put("historicalPrice", evidence.historicalPrice());
+        snapshot.put("recordOwnerDisplayName", evidence.recordOwnerDisplayName());
+        snapshot.put("recordOccurredAt", evidence.recordOccurredAt());
         snapshot.put("spiceLevel", evidence.spiceLevel());
         snapshot.put("available", evidence.available());
         snapshot.put("cleanliness", evidence.cleanliness());
@@ -518,6 +552,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         snapshot.put("groupRecordCount", evidence.groupRecordCount());
         snapshot.put("groupAverageRating", evidence.groupAverageRating());
         snapshot.put("distanceKm", evidence.distanceKm());
+        snapshot.put("candidateSourceType", evidence.sourceType().name());
         return snapshot;
     }
 
@@ -526,7 +561,9 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         Map<String, Object> reason = new LinkedHashMap<>();
         reason.put("reasonCode", reasonCode.name());
         reason.put("candidateType", selectedCandidate.type().name());
+        reason.put("candidateSourceType", evidence.sourceType().name());
         reason.put("placeMealId", evidence.placeMealId());
+        reason.put("foodRecordId", evidence.foodRecordId());
         reason.put("mealId", evidence.mealId());
         reason.put("placeId", evidence.placeId());
         reason.put("explanation", selectedCandidate.explanation());

@@ -235,6 +235,21 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(status().isUnprocessableEntity());
     }
 
+    @Test
+    void ordinaryChatWithoutSharedSourcesFallsBackToSupportedNavigation() throws Exception {
+        String accessToken = read(register("chat-navigation@example.test", "Chat Navigation"), "$.accessToken");
+        String sessionId = createSession(accessToken, "Navigation");
+
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Where can I find my saved food records?\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.route").value("NAVIGATION"))
+                .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"))
+                .andExpect(jsonPath("$.sources").isEmpty());
+    }
+
     private String createSession(String accessToken, String title) throws Exception {
         return read(mockMvc.perform(post("/api/v1/chat/sessions")
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))

@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.recommendation.domain.filter;
 
 import com.foodmind.foodmindbackend.recommendation.domain.CandidateEvidence;
+import com.foodmind.foodmindbackend.recommendation.domain.CandidateSourceType;
 import com.foodmind.foodmindbackend.recommendation.domain.PreferenceEvidence;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import java.util.HashSet;
@@ -19,6 +20,13 @@ public class AllergenFilterPolicy implements HardFilterPolicy {
     public FilterDecision apply(RecommendationRequestContext request, PreferenceEvidence preferences, CandidateEvidence candidate) {
         Set<String> blocked = new HashSet<>(preferences.allergenCodes());
         blocked.addAll(request.avoidAllergenCodes());
+        // A snapshot-only record has no authoritative allergen mapping. Do not treat an empty
+        // snapshot list as proof when the user has an active allergen restriction.
+        if (!blocked.isEmpty()
+                && candidate.sourceType() == CandidateSourceType.FOOD_RECORD
+                && candidate.mealId() == null) {
+            return FilterDecision.reject(FilterCode.ALLERGEN);
+        }
         boolean overlaps = candidate.allergenCodes().stream().anyMatch(blocked::contains);
         return overlaps ? FilterDecision.reject(FilterCode.ALLERGEN) : FilterDecision.allow();
     }

@@ -10,6 +10,8 @@ import jakarta.validation.ConstraintViolationException;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +47,8 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private static final Comparator<ApiFieldError> FIELD_ERROR_COMPARATOR =
             Comparator.comparing(ApiFieldError::field)
@@ -173,11 +177,6 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleDataIntegrity(
             DataIntegrityViolationException exception,
             HttpServletRequest request) {
-        org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class)
-                .error("data_integrity_violation path={} detail={}",
-                        request.getRequestURI(),
-                        exception.getMostSpecificCause().getMessage(),
-                        exception);
         return response(
                 HttpStatus.CONFLICT,
                 ErrorCode.CONFLICT,
@@ -220,11 +219,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiErrorResponse> handleUnexpected(Exception exception, HttpServletRequest request) {
-        org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class)
-                .error("unexpected_error path={} detail={}",
-                        request.getRequestURI(),
-                        exception.getMessage(),
-                        exception);
+        LOGGER.error(
+                "unexpected_request_failure method={} path={} traceId={}",
+                request.getMethod(),
+                request.getRequestURI(),
+                CorrelationIdFilter.currentCorrelationId(),
+                exception);
         return response(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ErrorCode.INTERNAL_ERROR,

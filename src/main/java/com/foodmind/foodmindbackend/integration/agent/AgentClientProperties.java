@@ -20,7 +20,7 @@ public class AgentClientProperties {
     private String contractVersion = "recommendation-agent-v1";
     private Duration connectTimeout = Duration.ofMillis(250);
     private Duration readTimeout = Duration.ofMillis(800);
-    private int maxResponseBytes = 16384;
+    private int maxResponseBytes = 65536;
 
     public boolean isEnabled() {
         return enabled;
