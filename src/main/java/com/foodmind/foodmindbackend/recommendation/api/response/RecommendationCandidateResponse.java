@@ -13,7 +13,9 @@ import java.util.UUID;
 
 public record RecommendationCandidateResponse(
         UUID candidateId,
+        String candidateSourceType,
         UUID placeMealId,
+        UUID foodRecordId,
         UUID mealId,
         String mealName,
         UUID placeId,
@@ -24,13 +26,18 @@ public record RecommendationCandidateResponse(
         int rank,
         List<String> reasonCodes,
         List<String> reasons,
-        String explanation) {
+        String explanation,
+        String recordOwnerDisplayName,
+        java.time.OffsetDateTime recordOccurredAt,
+        String priceKind) {
 
     public static RecommendationCandidateResponse from(RecommendationCandidateResult candidate) {
         List<String> codes = candidate.reasonCodes().stream().map(Enum::name).toList();
         return new RecommendationCandidateResponse(
                 candidate.candidateId(),
+                candidate.candidateSourceType().name(),
                 candidate.placeMealId(),
+                candidate.foodRecordId(),
                 candidate.mealId(),
                 candidate.mealName(),
                 candidate.placeId(),
@@ -41,6 +48,9 @@ public record RecommendationCandidateResponse(
                 candidate.rank(),
                 codes,
                 codes,
-                candidate.explanation());
+                candidate.explanation(),
+                candidate.recordOwnerDisplayName(),
+                candidate.recordOccurredAt(),
+                candidate.historicalPrice() ? "LAST_RECORDED" : "CURRENT");
     }
 }

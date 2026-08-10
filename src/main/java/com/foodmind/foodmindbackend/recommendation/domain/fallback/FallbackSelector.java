@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.recommendation.domain.fallback;
 
 import com.foodmind.foodmindbackend.recommendation.domain.CandidateEvidence;
+import com.foodmind.foodmindbackend.recommendation.domain.CandidateSourceType;
 import com.foodmind.foodmindbackend.recommendation.domain.EvaluatedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.PreferenceEvidence;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationType;
@@ -13,7 +14,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * @description:
@@ -32,24 +32,37 @@ public class FallbackSelector {
                 .filter(EvaluatedCandidate::eligible)
                 .toList();
         List<SelectedCandidate> selected = new ArrayList<>();
-        Set<UUID> usedOfferings = new HashSet<>();
+        Set<String> usedOfferings = new HashSet<>();
+
+        // A saved record is an explicit product promise: reserve one returned card whenever one
+        // survived the same hard filters as catalogue candidates.
+        eligible.stream()
+                .filter(candidate -> candidate.evidence().sourceType() == CandidateSourceType.FOOD_RECORD)
+                .sorted(comparatorFor(RecommendationType.PERSONAL, preferences))
+                .findFirst()
+                .ifPresent(candidate -> {
+                    RecommendationType type = candidate.evidence().groupRecordCount() > 0
+                            ? RecommendationType.GROUP_INSPIRED : RecommendationType.PERSONAL;
+                    selected.add(toSelected(candidate, preferences, type, 1));
+                });
+        selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().sourceKey()));
 
         pick(eligible, preferences, RecommendationType.PERSONAL, usedOfferings)
                 .ifPresent(candidate -> selected.add(toSelected(candidate, preferences, RecommendationType.PERSONAL, selected.size() + 1)));
-        selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().placeMealId()));
+        selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().sourceKey()));
 
         pick(eligible, preferences, RecommendationType.EXPLORATORY, usedOfferings)
                 .ifPresent(candidate -> selected.add(toSelected(candidate, preferences, RecommendationType.EXPLORATORY, selected.size() + 1)));
-        selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().placeMealId()));
+        selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().sourceKey()));
 
         pick(eligible, preferences, RecommendationType.GROUP_INSPIRED, usedOfferings)
                 .ifPresent(candidate -> selected.add(toSelected(candidate, preferences, RecommendationType.GROUP_INSPIRED, selected.size() + 1)));
 
         if (selected.size() < 3) {
             usedOfferings.clear();
-            selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().placeMealId()));
+            selected.forEach(candidate -> usedOfferings.add(candidate.candidate().evidence().sourceKey()));
             eligible.stream()
-                    .filter(candidate -> !usedOfferings.contains(candidate.evidence().placeMealId()))
+                    .filter(candidate -> !usedOfferings.contains(candidate.evidence().sourceKey()))
                     .sorted(comparatorFor(RecommendationType.PERSONAL, preferences))
                     .limit(3 - selected.size())
                     .forEach(candidate -> selected.add(toSelected(candidate, preferences, RecommendationType.PERSONAL, selected.size() + 1)));
@@ -61,10 +74,10 @@ public class FallbackSelector {
             List<EvaluatedCandidate> eligible,
             PreferenceEvidence preferences,
             RecommendationType type,
-            Set<UUID> usedOfferings) {
+            Set<String> usedOfferings) {
         boolean hasGroupEvidence = eligible.stream().anyMatch(candidate -> candidate.evidence().groupRecordCount() > 0);
         return eligible.stream()
-                .filter(candidate -> !usedOfferings.contains(candidate.evidence().placeMealId()))
+                .filter(candidate -> !usedOfferings.contains(candidate.evidence().sourceKey()))
                 .filter(candidate -> matchesType(candidate, preferences, type, hasGroupEvidence))
                 .sorted(comparatorFor(type, preferences))
                 .findFirst();
@@ -90,7 +103,7 @@ public class FallbackSelector {
                 .comparing((EvaluatedCandidate candidate) -> score(candidate.evidence(), preferences, type)).reversed()
                 .thenComparing(candidate -> budgetFit(candidate.evidence(), preferences))
                 .thenComparing(candidate -> distanceFit(candidate.evidence()))
-                .thenComparing(candidate -> candidate.evidence().placeMealId());
+                .thenComparing(candidate -> candidate.evidence().sourceKey());
     }
 
     private SelectedCandidate toSelected(

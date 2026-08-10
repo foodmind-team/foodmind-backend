@@ -102,7 +102,7 @@ class RecommendationAgentHttpAdapterTest {
                 Map.of("currency", "SGD"),
                 List.of(new RecommendationAgentCandidate(
                         candidateId,
-                        UUID.randomUUID(),
+                        "PLACE_MEAL:" + UUID.randomUUID(),
                         evidence(),
                         Map.of("priceAmount", new BigDecimal("9.50")))));
     }

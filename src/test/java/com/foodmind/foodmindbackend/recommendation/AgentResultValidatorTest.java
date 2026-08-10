@@ -185,7 +185,7 @@ class AgentResultValidatorTest {
                 groupAverageRating,
                 null,
                 distanceKm);
-        return new RecommendationAgentCandidate(candidateId, evidence.placeMealId(), evidence, Map.of("cuisineCode", cuisineCode));
+        return new RecommendationAgentCandidate(candidateId, evidence.sourceKey(), evidence, Map.of("cuisineCode", cuisineCode));
     }
 
     private AgentGenerationResult resultFromFixture(String fixtureName) throws IOException {

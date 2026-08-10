@@ -81,6 +81,12 @@ public class AgentResultValidator {
         if (candidates.size() == MAX_RETURNED_CANDIDATES) {
             require(seenTypes.size() == MAX_RETURNED_CANDIDATES, AgentFailureCode.SCHEMA_MISMATCH);
         }
+        boolean hasRecordCandidate = eligibleCandidates.values().stream()
+                .anyMatch(candidate -> candidate.evidence().sourceType() == CandidateSourceType.FOOD_RECORD);
+        if (hasRecordCandidate) {
+            require(candidates.stream().anyMatch(candidate -> eligibleCandidates.get(candidate.candidateId())
+                    .evidence().sourceType() == CandidateSourceType.FOOD_RECORD), AgentFailureCode.SOURCE_MIX_POLICY);
+        }
 
         return new ValidatedAgentResult(
                 result.contractVersion(),
