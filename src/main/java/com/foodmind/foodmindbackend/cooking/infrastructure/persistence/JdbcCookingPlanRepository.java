@@ -312,6 +312,13 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 LEFT JOIN cooking_plan_source cps ON cps.plan_id = cp.id
                 LEFT JOIN cooking_plan_task cpt ON cpt.plan_id = cp.id
                 WHERE cp.user_id = :userId
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM cooking_plan newer
+                      WHERE newer.user_id = cp.user_id
+                        AND newer.root_plan_id = cp.root_plan_id
+                        AND (newer.created_at, newer.id) > (cp.created_at, cp.id)
+                  )
                 GROUP BY cp.id
                 ORDER BY cp.created_at DESC, cp.id DESC
                 LIMIT :limit OFFSET :offset
@@ -326,7 +333,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
     @Override
     public long countOwned(UUID userId) {
         Long count = jdbcTemplate.queryForObject("""
-                SELECT count(*)
+                SELECT count(DISTINCT root_plan_id)
                 FROM cooking_plan
                 WHERE user_id = :userId
                 """,
@@ -809,6 +816,11 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
         List<String> questions = parsed instanceof com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse confirmation
                 ? confirmation.questions()
                 : List.of();
+        List<CookingPlanResult.ConfirmationQuestion> structuredQuestions = confirmationQuestions(root.id());
+        if (structuredQuestions.isEmpty()
+                && parsed instanceof com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse confirmation) {
+            structuredQuestions = resultMapper.toResult(confirmation).confirmationQuestions();
+        }
         return new CookingPlanResult(
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
@@ -819,7 +831,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 assumptions(root.id()),
                 repairOptions(root.id()),
                 questions,
-                confirmationQuestions(root.id()),
+                structuredQuestions,
                 decisions(root.id()),
                 List.of(), List.of(),
                 safetyPolicy, null, null);

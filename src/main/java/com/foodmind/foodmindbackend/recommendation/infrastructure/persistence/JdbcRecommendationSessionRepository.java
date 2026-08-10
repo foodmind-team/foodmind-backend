@@ -298,8 +298,8 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                 FROM recommendation_candidate
                 WHERE session_id = :sessionId
                   AND candidate_source_type = :sourceType
-                  AND ((:placeMealId IS NOT NULL AND place_meal_id = :placeMealId)
-                       OR (:foodRecordId IS NOT NULL AND food_record_id = :foodRecordId))
+                  AND ((:sourceType = 'PLACE_MEAL' AND place_meal_id = :placeMealId)
+                       OR (:sourceType = 'FOOD_RECORD' AND food_record_id = :foodRecordId))
                   AND eligibility_status = 'ELIGIBLE'
                 """,
                 new MapSqlParameterSource()
@@ -552,7 +552,6 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
         snapshot.put("groupRecordCount", evidence.groupRecordCount());
         snapshot.put("groupAverageRating", evidence.groupAverageRating());
         snapshot.put("distanceKm", evidence.distanceKm());
-        snapshot.put("candidateSourceType", evidence.sourceType().name());
         return snapshot;
     }
 

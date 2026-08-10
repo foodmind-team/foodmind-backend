@@ -140,8 +140,6 @@ public class RecommendationTransactionService {
         snapshot.put("groupRecordCount", evidence.groupRecordCount());
         snapshot.put("groupAverageRating", evidence.groupAverageRating());
         snapshot.put("distanceKm", evidence.distanceKm());
-        snapshot.put("candidateSourceType", evidence.sourceType().name());
-        snapshot.put("historicalPrice", evidence.historicalPrice());
         return snapshot;
     }
 

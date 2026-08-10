@@ -33,21 +33,28 @@ public class GetOrCreateShoppingList {
 
     @Transactional
     public ShoppingList handle(UUID userId, UUID sourcePlanId) {
-        return shoppingLists.findOwnedBySourcePlan(userId, sourcePlanId)
-                .orElseGet(() -> create(userId, sourcePlanId));
+        ShoppingList exact = shoppingLists.findOwnedBySourcePlan(userId, sourcePlanId).orElse(null);
+        if (exact != null) {
+            return exact;
+        }
+        CookingPlanRepository.PlanLineage lineage = cookingPlans.findLineage(userId, sourcePlanId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "Cooking plan was not found."));
+        // A reduction/recheck creates child plans, but all of them describe one purchase journey.
+        // Reusing the root list prevents a stale history card from buying the same shortage twice.
+        return shoppingLists.findOwnedByRootPlan(userId, lineage.rootPlanId())
+                .orElseGet(() -> create(userId, sourcePlanId, lineage));
     }
 
-    private ShoppingList create(UUID userId, UUID sourcePlanId) {
+    private ShoppingList create(
+            UUID userId,
+            UUID sourcePlanId,
+            CookingPlanRepository.PlanLineage lineage) {
         CookingPlanResult source = cookingPlans.findOwned(userId, sourcePlanId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "Cooking plan was not found."));
         if (!"NEEDS_CONFIRMATION".equals(source.status())) {
             throw new ApiException(ErrorCode.CONFLICT, "Only a plan awaiting inventory confirmation can create a shopping list.");
         }
-        CookingPlanRepository.PlanLineage lineage = cookingPlans.findLineage(userId, sourcePlanId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        CookingPlanResult root = cookingPlans.findOwned(userId, lineage.rootPlanId())
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        CookingPlanResult.Decision purchase = root.decisions().stream()
+        CookingPlanResult.Decision purchase = source.decisions().stream()
                 .filter(decision -> "purchase".equals(decision.optionType()))
                 .findFirst()
                 .orElseThrow(() -> new ApiException(ErrorCode.CONFLICT,
@@ -56,13 +63,13 @@ public class GetOrCreateShoppingList {
         if (purchaseItems.isEmpty()) {
             throw new ApiException(ErrorCode.CONFLICT, "The purchase decision contains no usable items.");
         }
-        int originalServings = root.sources().stream()
+        int originalServings = source.sources().stream()
                 .map(CookingPlanResult.Source::targetServings)
                 .filter(java.util.Objects::nonNull)
                 .mapToInt(BigDecimal::intValueExact)
                 .max()
                 .orElseThrow(() -> new ApiException(ErrorCode.CONFLICT,
-                        "The original plan has no serving count."));
+                        "The source plan has no serving count."));
         OffsetDateTime now = OffsetDateTime.now(clock);
         UUID listId = UUID.randomUUID();
         List<ShoppingList.Item> items = new ArrayList<>();

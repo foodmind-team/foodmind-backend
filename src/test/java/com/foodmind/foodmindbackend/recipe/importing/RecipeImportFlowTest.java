@@ -83,6 +83,9 @@ class RecipeImportFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"2\""))
                 .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.drafts[0].name").value("Lemon Pasta"))
+                .andExpect(jsonPath("$.drafts[0].ingredients[0]").value("200 g spaghetti"))
+                .andExpect(jsonPath("$.drafts[1].name").value("Tomato Salad"))
                 .andExpect(jsonPath("$.drafts[1].servings").value(4))
                 .andReturn();
         assertThat(read(ready, "$.questions").toString()).isEqualTo("[]");
@@ -111,20 +114,20 @@ class RecipeImportFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
-    void englishOnlyPolicyRejectsMixedInputBeforeAgentCall() throws Exception {
+    void multilingualInputIsAcceptedAndAgentOutputRemainsEnglish() throws Exception {
         String token = read(register("import-language@example.test", "Import Language"), "$.accessToken");
 
         mockMvc.perform(post("/api/v1/recipe-imports")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"text\":\"Make 番茄 pasta\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(
-                        "Please use English only. Chinese or mixed-language input is not supported."))
-                .andExpect(jsonPath("$.fieldErrors[0].code").value("ENGLISH_ONLY"));
+                        .content("{\"text\":\"做一道番茄意面\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.drafts[0].name").value("Soup"))
+                .andExpect(jsonPath("$.drafts[0].ingredients[0]").value("200 g peas"))
+                .andExpect(jsonPath("$.drafts[0].steps[0]").value("Simmer the peas."));
 
-        assertThat(AGENT_CALLS).hasValue(0);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM recipe_import_session", Long.class)).isZero();
+        assertThat(AGENT_CALLS).hasValue(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM recipe_import_session", Long.class)).isEqualTo(1);
     }
 
     @Test
@@ -180,15 +183,23 @@ class RecipeImportFlowTest extends PostgreSqlContainerSupport {
         @Bean
         @Primary
         RecipeImportAgentPort recipeImportAgentPort() {
-            return (requestId, text, answers) -> {
+            return (requestId, text, answers, persistedDrafts, persistedQuestions) -> {
                 AGENT_CALLS.incrementAndGet();
                 AGENT_OBSERVED_TRANSACTION.set(TransactionSynchronizationManager.isActualTransactionActive());
+                if (!answers.isEmpty()) {
+                    assertThat(persistedDrafts).hasSize(2);
+                    assertThat(persistedQuestions)
+                            .extracting(RecipeImportQuestion::questionId)
+                            .containsExactly("dish-2:servings");
+                }
                 boolean answered = answers.stream().anyMatch(answer ->
                         answer.questionId().equals("dish-2:servings") && answer.value().matches("\\d+"));
                 List<RecipeImportDraft> drafts = text.contains("Lemon Pasta")
                         ? List.of(
-                                draft("dish-1", "Lemon Pasta", 4, "200 g spaghetti", "Boil the spaghetti."),
-                                draft("dish-2", "Tomato Salad", answered ? 4 : null, "2 tomatoes", "Slice the tomatoes."))
+                                draft("dish-1", answered ? "柠檬意面" : "Lemon Pasta", 4,
+                                        answered ? "200克意大利面" : "200 g spaghetti", "Boil the spaghetti."),
+                                draft("dish-2", answered ? "番茄沙拉" : "Tomato Salad", answered ? 4 : null,
+                                        "2 tomatoes", "Slice the tomatoes."))
                         : List.of(draft("dish-1", "Soup", null, "200 g peas", "Simmer the peas."));
                 String questionId = text.contains("Tomato Salad") ? "dish-2:servings" : "dish-1:servings";
                 List<RecipeImportQuestion> questions = answered

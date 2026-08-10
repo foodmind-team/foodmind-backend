@@ -82,7 +82,7 @@ public class CookingPlanResultMapper {
                 response.assumptions().stream().map(this::assumption).toList(),
                 response.repairOptions().stream().map(this::repairOption).toList(),
                 response.questions(),
-                response.confirmationQuestions().stream().map(this::confirmationQuestion).toList(),
+                confirmationQuestions(response),
                 decisions(response.decisions()),
                 List.of(), List.of(),
                 safetyPolicy(response.safetyPolicy()),
@@ -200,6 +200,59 @@ public class CookingPlanResultMapper {
                         option.value(), option.label(), option.suggested())).toList(),
                 question.required(),
                 question.suggestedValue());
+    }
+
+    private List<CookingPlanResult.ConfirmationQuestion> confirmationQuestions(AgentConfirmationPlanResponse response) {
+        if (!response.confirmationQuestions().isEmpty()) {
+            return response.confirmationQuestions().stream().map(this::confirmationQuestion).toList();
+        }
+        if (response.decisions().isEmpty()) {
+            return List.of();
+        }
+        List<CookingPlanResult.QuestionOption> options = response.decisions().stream()
+                .map(decision -> strategyOption(decision, response.repairOptions()))
+                .toList();
+        String prompt = response.questions().stream()
+                .filter(question -> question != null && !question.isBlank())
+                .findFirst()
+                .orElse("Choose how to continue.");
+        return List.of(new CookingPlanResult.ConfirmationQuestion(
+                "repair:strategy",
+                "repair_strategy",
+                prompt,
+                "CHOICE",
+                options,
+                true,
+                options.get(0).value()));
+    }
+
+    private CookingPlanResult.QuestionOption strategyOption(
+            AgentDecision decision,
+            List<AgentRepairOption> repairOptions) {
+        for (AgentRepairOption option : repairOptions) {
+            if (option.optionId().equals(decision.optionId())) {
+                return new CookingPlanResult.QuestionOption(
+                        decision.optionId(),
+                        option.description(),
+                        false);
+            }
+        }
+        return new CookingPlanResult.QuestionOption(
+                decision.optionId(),
+                fallbackDecisionLabel(decision),
+                false);
+    }
+
+    private String fallbackDecisionLabel(AgentDecision decision) {
+        if ("reduce_servings".equals(decision.optionType())
+                && decision.payload() != null
+                && decision.payload().get("servings") instanceof Number servings) {
+            return "Reduce to " + servings.intValue() + (servings.intValue() == 1 ? " serving" : " servings");
+        }
+        if ("purchase".equals(decision.optionType())) {
+            return "Buy missing ingredients";
+        }
+        return decision.optionType().replace('_', ' ');
     }
 
     private List<CookingPlanResult.Decision> decisions(List<AgentDecision> decisions) {

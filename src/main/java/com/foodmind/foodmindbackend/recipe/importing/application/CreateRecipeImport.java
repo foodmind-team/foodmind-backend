@@ -30,7 +30,7 @@ public class CreateRecipeImport {
     }
 
     public RecipeImportView handle(UUID ownerUserId, String inputText) {
-        String text = RecipeImportLanguagePolicy.validateText(inputText);
+        String text = RecipeImportInputPolicy.validateText(inputText);
         OffsetDateTime now = OffsetDateTime.now(clock);
         RecipeImportSession created = repository.create(new RecipeImportSession(
                 UUID.randomUUID(),
@@ -48,7 +48,8 @@ public class CreateRecipeImport {
                 null,
                 0));
         try {
-            RecipeImportAgentPort.Result result = agent.parse(created.id().toString(), text, List.of());
+            RecipeImportAgentPort.Result result = agent.parse(
+                    created.id().toString(), text, List.of(), List.of(), List.of());
             RecipeImportAgentResultValidator.validate(result);
             RecipeImportSession updated = repository.updateAgentResult(
                             ownerUserId,

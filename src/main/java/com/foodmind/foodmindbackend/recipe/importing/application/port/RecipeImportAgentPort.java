@@ -7,7 +7,12 @@ import com.foodmind.foodmindbackend.recipe.importing.domain.RecipeImportStatus;
 import java.util.List;
 
 public interface RecipeImportAgentPort {
-    Result parse(String requestId, String text, List<RecipeImportAnswer> answers);
+    Result parse(
+            String requestId,
+            String text,
+            List<RecipeImportAnswer> answers,
+            List<RecipeImportDraft> drafts,
+            List<RecipeImportQuestion> questions);
 
     record Result(
             RecipeImportStatus status,
