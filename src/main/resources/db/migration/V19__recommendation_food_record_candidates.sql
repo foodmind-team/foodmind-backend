@@ -8,6 +8,7 @@ SET candidate_source_type = 'PLACE_MEAL'
 WHERE candidate_source_type IS NULL;
 
 ALTER TABLE public.recommendation_candidate
+    ALTER COLUMN candidate_source_type SET DEFAULT 'PLACE_MEAL',
     ALTER COLUMN candidate_source_type SET NOT NULL,
     ALTER COLUMN place_meal_id DROP NOT NULL,
     ADD CONSTRAINT fk_recommendation_candidate_food_record
