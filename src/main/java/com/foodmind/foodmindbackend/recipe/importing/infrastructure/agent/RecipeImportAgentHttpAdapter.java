@@ -38,14 +38,21 @@ public class RecipeImportAgentHttpAdapter implements RecipeImportAgentPort {
     }
 
     @Override
-    public Result parse(String requestId, String text, List<RecipeImportAnswer> answers) {
+    public Result parse(
+            String requestId,
+            String text,
+            List<RecipeImportAnswer> answers,
+            List<RecipeImportDraft> drafts,
+            List<RecipeImportQuestion> questions) {
         if (!properties.isEnabled() || properties.getServiceToken() == null || properties.getServiceToken().isBlank()) {
             throw unavailable();
         }
         AgentRequest request = new AgentRequest(
                 requestId,
                 text,
-                answers.stream().map(answer -> new AgentAnswer(answer.questionId(), answer.value())).toList());
+                answers.stream().map(answer -> new AgentAnswer(answer.questionId(), answer.value())).toList(),
+                drafts.stream().map(AgentDraft::fromDomain).toList(),
+                questions.stream().map(AgentQuestion::fromDomain).toList());
         try {
             byte[] body = restClient.post()
                     .uri(properties.getRecipeImportPath())
@@ -77,7 +84,12 @@ public class RecipeImportAgentHttpAdapter implements RecipeImportAgentPort {
     }
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    private record AgentRequest(String requestId, String text, List<AgentAnswer> answers) {
+    private record AgentRequest(
+            String requestId,
+            String text,
+            List<AgentAnswer> answers,
+            List<AgentDraft> drafts,
+            List<AgentQuestion> questions) {
     }
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -99,6 +111,11 @@ public class RecipeImportAgentHttpAdapter implements RecipeImportAgentPort {
             Integer servings,
             List<String> ingredients,
             List<String> steps) {
+        private static AgentDraft fromDomain(RecipeImportDraft draft) {
+            return new AgentDraft(
+                    draft.draftId(), draft.name(), draft.servings(), draft.ingredients(), draft.steps());
+        }
+
         private RecipeImportDraft toDomain() {
             return new RecipeImportDraft(draftId, name, servings, ingredients, steps);
         }
@@ -113,6 +130,17 @@ public class RecipeImportAgentHttpAdapter implements RecipeImportAgentPort {
             String responseType,
             boolean required,
             String suggestedValue) {
+        private static AgentQuestion fromDomain(RecipeImportQuestion question) {
+            return new AgentQuestion(
+                    question.questionId(),
+                    question.draftId(),
+                    question.fieldPath(),
+                    question.prompt(),
+                    question.responseType(),
+                    question.required(),
+                    question.suggestedValue());
+        }
+
         private RecipeImportQuestion toDomain() {
             return new RecipeImportQuestion(
                     questionId, draftId, fieldPath, prompt, responseType, required, suggestedValue);
