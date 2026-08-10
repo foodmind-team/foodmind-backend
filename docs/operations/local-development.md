@@ -41,6 +41,9 @@ COOKING_AGENT_ENABLED=true
 COOKING_AGENT_BASE_URL=http://localhost:8003
 COOKING_AGENT_SERVICE_TOKEN=<same-token-as-cooking-agent>
 COOKING_TASK_POLL_ENABLED=true
+CHAT_AGENT_ENABLED=true
+CHAT_AGENT_BASE_URL=http://localhost:8004
+CHAT_AGENT_SERVICE_TOKEN=<same-token-as-chat-agent>
 INFERENCE_SERVICE_BASE_URL=http://localhost:8002
 INFERENCE_SERVICE_TOKEN=<local-only-token>
 # Only for plain-http local Web development; keep the production default true.
@@ -75,7 +78,15 @@ exact Web dev origin(s); wildcard origins are not supported with credentials.
 
 2. Backend
 3. Intelligence inference service
-4. Intelligence Agent services, including the Cooking Agent on port `8003`
+4. Intelligence Agent services, including the Cooking Agent on port `8003` and
+   the Chat Agent on port `8004`. `CHAT_AGENT_SERVICE_TOKEN` must match
+   `CHAT_AGENT_INTERNAL_SERVICE_TOKEN`; start the Chat Agent with:
+
+   ```powershell
+   $env:CHAT_AGENT_INTERNAL_SERVICE_TOKEN = "<same-token-as-chat-agent>"
+   docker compose -f ../foodmind-intelligence/deployment/local/chat-agent.compose.yaml up --build
+   ```
+
 5. Web or Android client
 
 The backend should remain usable for non-AI CRUD features if Intelligence is unavailable.
@@ -137,6 +148,8 @@ These are the expected local endpoints after the backend profile is started:
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
 | Agent service | `http://localhost:8001` |
 | Inference service | `http://localhost:8002` |
+| Cooking Agent | `http://localhost:8003` |
+| Chat Agent | `http://localhost:8004` |
 
 ## Product-Flow Smoke Checks
 
