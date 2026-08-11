@@ -3984,6 +3984,7 @@ paths:
           application/json:
             schema:
               type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/CookingQuestionAnswer'
       responses:
@@ -4033,6 +4034,7 @@ paths:
           application/json:
             schema:
               type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/CookingQuestionAnswer'
       responses:
