@@ -36,7 +36,10 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@TestPropertySource(properties = "foodmind.security.internal-service.token=test-service-token")
+@TestPropertySource(properties = {
+        "foodmind.security.internal-service.token=test-service-token",
+        "foodmind.chat.agent.enabled=false"
+})
 class ChatFlowTest extends PostgreSqlContainerSupport {
 
     private static final String MEAL_ID = "20000000-0000-4000-8000-000000000001";
