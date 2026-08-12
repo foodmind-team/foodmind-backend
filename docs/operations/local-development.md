@@ -28,21 +28,21 @@ Minimum values:
 ```text
 SPRING_PROFILES_ACTIVE=local
 DB_URL=jdbc:postgresql://localhost:5432/foodmind
-DB_USERNAME=foodmind
-DB_PASSWORD=<local-only-password>
+DB_USERNAME=postgres
+DB_PASSWORD=123456
 JWT_ISSUER=foodmind-local
 JWT_AUDIENCE=foodmind-clients
 JWT_PUBLIC_KEY=<local-only-development-public-key-or-placeholder>
 DELEGATION_JWT_ISSUER=foodmind-backend-local
 DELEGATION_JWT_PUBLIC_KEY=<local-only-development-public-key-or-placeholder>
-AGENT_SERVICE_BASE_URL=http://localhost:8001
+AGENT_SERVICE_BASE_URL=http://localhost:8004
 AGENT_SERVICE_TOKEN=<local-only-token>
 COOKING_AGENT_ENABLED=true
 COOKING_AGENT_BASE_URL=http://localhost:8003
 COOKING_AGENT_SERVICE_TOKEN=<same-token-as-cooking-agent>
 COOKING_TASK_POLL_ENABLED=true
 CHAT_AGENT_ENABLED=true
-CHAT_AGENT_BASE_URL=http://localhost:8004
+CHAT_AGENT_BASE_URL=http://localhost:8001
 CHAT_AGENT_SERVICE_TOKEN=<same-token-as-chat-agent>
 INFERENCE_SERVICE_BASE_URL=http://localhost:8002
 INFERENCE_SERVICE_TOKEN=<local-only-token>
@@ -78,8 +78,9 @@ exact Web dev origin(s); wildcard origins are not supported with credentials.
 
 2. Backend
 3. Intelligence inference service
-4. Intelligence Agent services, including the Cooking Agent on port `8003` and
-   the Chat Agent on port `8004`. `CHAT_AGENT_SERVICE_TOKEN` must match
+4. Intelligence Agent services, including the Chat Agent on port `8001`, the
+   Cooking Agent on port `8003`, and the Recommendation Agent on port `8004`.
+   `CHAT_AGENT_SERVICE_TOKEN` must match
    `CHAT_AGENT_INTERNAL_SERVICE_TOKEN`; start the Chat Agent with:
 
    ```powershell
@@ -146,10 +147,10 @@ These are the expected local endpoints after the backend profile is started:
 | Backend API | `http://localhost:8080/api/v1` |
 | OpenAPI JSON | `http://localhost:8080/v3/api-docs` |
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
-| Agent service | `http://localhost:8001` |
+| Recommendation Agent | `http://localhost:8004` |
 | Inference service | `http://localhost:8002` |
 | Cooking Agent | `http://localhost:8003` |
-| Chat Agent | `http://localhost:8004` |
+| Chat Agent | `http://localhost:8001` |
 
 ## Product-Flow Smoke Checks
 
