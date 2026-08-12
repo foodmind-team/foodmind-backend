@@ -268,7 +268,9 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
     @Override
     public List<ChatReference> findSessionReferences(UUID userId, UUID sessionId) {
         findOwnedSession(userId, sessionId).orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        return references(sessionId);
+        return references(sessionId).stream()
+                .filter(reference -> reference.origin() == ChatReferenceOrigin.USER_SHARED)
+                .toList();
     }
 
     @Override
