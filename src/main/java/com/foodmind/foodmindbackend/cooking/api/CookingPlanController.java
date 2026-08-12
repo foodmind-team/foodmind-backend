@@ -19,6 +19,7 @@ import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanReposito
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotEmpty;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
@@ -139,7 +140,7 @@ public class CookingPlanController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @PathVariable UUID planId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody List<@Valid QuestionAnswer> answers) {
+            @NotEmpty @RequestBody List<@Valid QuestionAnswer> answers) {
         return CookingPlanResponse.from(generateCookingPlan.submitDecisions(
                 principal.id(), planId, answers, idempotencyKey));
     }
@@ -149,7 +150,7 @@ public class CookingPlanController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @PathVariable UUID planId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody List<@Valid QuestionAnswer> answers) {
+            @NotEmpty @RequestBody List<@Valid QuestionAnswer> answers) {
         return asyncResponse(generateCookingPlan.submitDecisionsAsync(
                 principal.id(), planId, answers, idempotencyKey));
     }

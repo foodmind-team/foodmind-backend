@@ -9,13 +9,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.foodmind.foodmindbackend.recommendation.application.port.RecommendationAgentPort;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.AgentFailureCode;
+import com.foodmind.foodmindbackend.recommendation.domain.agent.AgentGenerationResult;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -290,5 +296,21 @@ class RecommendationFallbackFlowTest extends PostgreSqlContainerSupport {
 
     private String bearer(String accessToken) {
         return "Bearer " + accessToken;
+    }
+
+    @TestConfiguration
+    static class UnavailableAgentConfiguration {
+
+        @Bean
+        @Primary
+        RecommendationAgentPort recommendationAgentPort() {
+            return command -> AgentGenerationResult.failure(
+                    AgentFailureCode.CONNECTION_ERROR,
+                    command.contractVersion(),
+                    command.requestId(),
+                    command.sessionId(),
+                    command.traceId(),
+                    "offline-fallback-test-agent-trace");
+        }
     }
 }

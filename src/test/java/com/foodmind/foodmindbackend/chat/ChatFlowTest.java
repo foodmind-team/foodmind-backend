@@ -36,7 +36,10 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@TestPropertySource(properties = "foodmind.security.internal-service.token=test-service-token")
+@TestPropertySource(properties = {
+        "foodmind.security.internal-service.token=test-service-token",
+        "foodmind.chat.agent.enabled=false"
+})
 class ChatFlowTest extends PostgreSqlContainerSupport {
 
     private static final String MEAL_ID = "20000000-0000-4000-8000-000000000001";
@@ -72,7 +75,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(otherToken)))
                 .andExpect(status().isNotFound());
 
-        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
+        String referenceId = read(mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -83,7 +86,21 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                                 """.formatted(PRODUCT_ID)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.origin").value("USER_SHARED"))
-                .andExpect(jsonPath("$.introducedByMessageId").doesNotExist());
+                .andExpect(jsonPath("$.introducedByMessageId").doesNotExist())
+                .andReturn(), "$.id");
+
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceType": "FOOD_PRODUCT",
+                                  "sourceId": "%s"
+                                }
+                                """.formatted(PRODUCT_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(referenceId))
+                .andExpect(jsonPath("$.origin").value("USER_SHARED"));
 
         mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
@@ -177,6 +194,13 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .content("{\"query\":\"Delegated prata\",\"sourceTypes\":[\"FOOD_RECORD\"],\"size\":10}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)));
+        mockMvc.perform(post("/internal/v1/explore")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer(searchDelegation))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceTypes\":[\"PLACE\"],\"size\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].sourceId", hasItem(PLACE_ID)));
 
         String resolveDelegation = delegationTokenIssuer.issue(
                         actorId,
@@ -232,6 +256,11 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                                   "route": "RECOMMENDATION"
                                 }
                                 """))
+                .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"hello\",\"route\":\"OUT_OF_SCOPE\"}"))
                 .andExpect(status().isUnprocessableEntity());
     }
 

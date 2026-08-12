@@ -307,6 +307,22 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
 
         mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", planId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "empty-decide-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions-async", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "empty-decide-async-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                         .header("Idempotency-Key", "stale-decide-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

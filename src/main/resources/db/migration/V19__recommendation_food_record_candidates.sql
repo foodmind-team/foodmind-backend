@@ -3,9 +3,19 @@ ALTER TABLE public.recommendation_candidate
     ADD COLUMN candidate_source_type varchar(20),
     ADD COLUMN food_record_id uuid;
 
+-- V7's runtime guard correctly rejects changes once a recommendation session has
+-- completed. This one-time schema backfill must update those legacy rows before
+-- the new source constraints can be installed. Flyway runs PostgreSQL migrations
+-- transactionally, so the guard is restored even if this migration fails.
+ALTER TABLE public.recommendation_candidate
+    DISABLE TRIGGER trg_recommendation_candidate_guard_mutation;
+
 UPDATE public.recommendation_candidate
 SET candidate_source_type = 'PLACE_MEAL'
 WHERE candidate_source_type IS NULL;
+
+ALTER TABLE public.recommendation_candidate
+    ENABLE TRIGGER trg_recommendation_candidate_guard_mutation;
 
 ALTER TABLE public.recommendation_candidate
     ALTER COLUMN candidate_source_type SET DEFAULT 'PLACE_MEAL',
