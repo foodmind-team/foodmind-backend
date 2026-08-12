@@ -194,6 +194,13 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .content("{\"query\":\"Delegated prata\",\"sourceTypes\":[\"FOOD_RECORD\"],\"size\":10}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)));
+        mockMvc.perform(post("/internal/v1/explore")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer(searchDelegation))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceTypes\":[\"PLACE\"],\"size\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].sourceId", hasItem(PLACE_ID)));
 
         String resolveDelegation = delegationTokenIssuer.issue(
                         actorId,
