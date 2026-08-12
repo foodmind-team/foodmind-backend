@@ -6,7 +6,7 @@
       <env name="WEB_ALLOWED_ORIGINS" value="http://localhost:5173,http://127.0.0.1:5173" />
       <env name="INTERNAL_SERVICE_TOKEN" value="local-development-service-token" />
       <env name="RECOMMENDATION_AGENT_ENABLED" value="true" />
-      <env name="RECOMMENDATION_AGENT_BASE_URL" value="http://127.0.0.1:8001" />
+      <env name="RECOMMENDATION_AGENT_BASE_URL" value="http://127.0.0.1:8004" />
       <env name="RECOMMENDATION_AGENT_ENDPOINT_PATH" value="/internal/v1/recommendations/generate" />
       <env name="RECOMMENDATION_AGENT_SERVICE_TOKEN" value="local-recommendation-token" />
       <env name="RECOMMENDATION_AGENT_READ_TIMEOUT" value="65s" />
