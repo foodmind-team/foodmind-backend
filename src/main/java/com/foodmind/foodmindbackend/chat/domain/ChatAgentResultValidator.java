@@ -4,6 +4,7 @@ import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentGenerationResult;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentSourceResult;
 import com.foodmind.foodmindbackend.chat.domain.agent.ValidatedChatAgentResult;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -54,7 +55,7 @@ public class ChatAgentResultValidator {
                     result.route(),
                     result.responseStatus(),
                     answer,
-                    result.sources());
+                    List.of());
         }
         if (result.responseStatus() != ChatResponseStatus.SUCCEEDED
                 && result.responseStatus() != ChatResponseStatus.FALLBACK_SUCCEEDED) {
