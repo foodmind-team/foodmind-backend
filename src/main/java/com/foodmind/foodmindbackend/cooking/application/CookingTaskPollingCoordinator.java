@@ -55,7 +55,7 @@ public class CookingTaskPollingCoordinator {
         this.objectMapper = objectMapper;
     }
 
-    @Scheduled(fixedDelayString = "${foodmind.cooking.task.poll-interval:5s}")
+    @Scheduled(fixedDelayString = "${foodmind.cooking.task.poll-interval:2s}")
     public void pollDueTasks() {
         if (!properties.isPollEnabled()) {
             return;

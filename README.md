@@ -232,6 +232,7 @@ Secret values must be supplied by the environment and must never be committed.
 | `COOKING_AGENT_BASE_URL` | Private Cooking Agent base URL |
 | `COOKING_AGENT_SERVICE_TOKEN` | Credential shared only with the Cooking Agent |
 | `COOKING_TASK_POLL_ENABLED` | Enables Backend materialisation of asynchronous Cooking Agent tasks |
+| `COOKING_TASK_POLL_INTERVAL` | Agent task status polling interval (defaults to `2s`) |
 | `INFERENCE_SERVICE_BASE_URL` | Private inference-service base URL |
 | `INFERENCE_SERVICE_TOKEN` | Internal service credential |
 | `S3_BUCKET` | Optional image bucket |
