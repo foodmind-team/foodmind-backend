@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -44,14 +45,25 @@ public class DashboardQueryAdapter implements DashboardQuery {
     @Override
     public DashboardProjection loadMetrics(UUID actorId, AnalyticsWindow window) {
         MapSqlParameterSource parameters = parameters(actorId, window);
+        var consumptionFuture = CompletableFuture.supplyAsync(() -> consumption(parameters));
+        var spendingFuture = CompletableFuture.supplyAsync(() -> spending(parameters));
+        var cuisinesFuture = CompletableFuture.supplyAsync(() -> cuisines(parameters));
+        var repeatsFuture = CompletableFuture.supplyAsync(() -> repeats(parameters));
+        var recommendationsFuture = CompletableFuture.supplyAsync(() -> recommendations(parameters));
+        var rejectionReasonsFuture = CompletableFuture.supplyAsync(() -> rejectionReasons(parameters));
+        var candidateTypesFuture = CompletableFuture.supplyAsync(() -> candidateTypes(parameters));
+
+        CompletableFuture.allOf(consumptionFuture, spendingFuture, cuisinesFuture,
+                repeatsFuture, recommendationsFuture, rejectionReasonsFuture, candidateTypesFuture).join();
+
         List<MetricValue> metrics = new ArrayList<>();
-        metrics.addAll(consumption(parameters));
-        metrics.addAll(spending(parameters));
-        metrics.addAll(cuisines(parameters));
-        metrics.addAll(repeats(parameters));
-        metrics.addAll(recommendations(parameters));
-        metrics.addAll(rejectionReasons(parameters));
-        metrics.addAll(candidateTypes(parameters));
+        metrics.addAll(consumptionFuture.join());
+        metrics.addAll(spendingFuture.join());
+        metrics.addAll(cuisinesFuture.join());
+        metrics.addAll(repeatsFuture.join());
+        metrics.addAll(recommendationsFuture.join());
+        metrics.addAll(rejectionReasonsFuture.join());
+        metrics.addAll(candidateTypesFuture.join());
         return new DashboardProjection(window, metrics);
     }
 
