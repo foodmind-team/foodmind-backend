@@ -2,9 +2,6 @@
   <configuration default="false" name="Local-FoodmindBackendApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
     <option name="ACTIVE_PROFILES" value="local" />
     <envs>
-      <env name="DB_URL" value="jdbc:postgresql://localhost:15432/foodmind" />
-      <env name="DB_USERNAME" value="foodmind" />
-      <env name="DB_PASSWORD" value="foodmind_local_password" />
       <env name="WEB_COOKIE_SECURE" value="false" />
       <env name="WEB_ALLOWED_ORIGINS" value="http://localhost:5173,http://127.0.0.1:5173" />
       <env name="INTERNAL_SERVICE_TOKEN" value="local-development-service-token" />
