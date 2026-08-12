@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.search.api.internal.response;
 
 import com.foodmind.foodmindbackend.search.domain.SearchDocument;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -14,17 +15,21 @@ public record InternalSearchDocumentResponse(
         String sourceType,
         UUID sourceId,
         String title,
+        String subtitle,
         String snippet,
         String visibility,
-        UUID groupId) {
+        UUID groupId,
+        OffsetDateTime occurredAt) {
 
     public static InternalSearchDocumentResponse from(SearchDocument document) {
         return new InternalSearchDocumentResponse(
                 document.sourceType().name(),
                 document.sourceId(),
                 document.title(),
+                document.subtitle(),
                 document.snippet(),
                 document.visibility(),
-                document.groupId());
+                document.groupId(),
+                document.occurredAt());
     }
 }
