@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -274,20 +273,28 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
 
     @Override
     public ChatReference upsertUserReference(UUID userId, UUID sessionId, ChatSourcePointer source) {
-        UUID referenceId = UUID.randomUUID();
-        try {
+        lockActiveSession(userId, sessionId);
+        Optional<ChatReference> existing = findReferenceBySource(sessionId, source.sourceType(), source.sourceId());
+        if (existing.isPresent()) {
             jdbcTemplate.update("""
-                    INSERT INTO chat_reference (
-                        id, session_id, origin, source_type, food_record_id, food_product_id, place_id
-                    )
-                    VALUES (
-                        :id, :sessionId, 'USER_SHARED', :sourceType, :foodRecordId, :foodProductId, :placeId
-                    )
+                    UPDATE chat_reference
+                    SET origin = 'USER_SHARED', introduced_by_message_id = NULL
+                    WHERE id = :referenceId
                     """,
-                    referenceParams(referenceId, sessionId, null, ChatReferenceOrigin.USER_SHARED, source.sourceType(), source.sourceId()));
-        } catch (DuplicateKeyException exception) {
-            return findReferenceBySource(sessionId, source.sourceType(), source.sourceId()).orElseThrow();
+                    new MapSqlParameterSource("referenceId", existing.get().id()));
+            touchSession(userId, sessionId);
+            return findReference(existing.get().id()).orElseThrow();
         }
+        UUID referenceId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO chat_reference (
+                    id, session_id, origin, source_type, food_record_id, food_product_id, place_id
+                )
+                VALUES (
+                    :id, :sessionId, 'USER_SHARED', :sourceType, :foodRecordId, :foodProductId, :placeId
+                )
+                """,
+                referenceParams(referenceId, sessionId, null, ChatReferenceOrigin.USER_SHARED, source.sourceType(), source.sourceId()));
         touchSession(userId, sessionId);
         return findReference(referenceId).orElseThrow();
     }

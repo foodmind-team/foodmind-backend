@@ -68,7 +68,7 @@ public class ChatMessageService {
 
     public ChatMessage post(UUID userId, UUID sessionId, String content, List<UUID> referenceIds, String route) {
         String safeContent = validateContent(content);
-        validateRequestedRoute(route);
+        ChatRoute requestedRoute = validateRequestedRoute(route);
         List<UUID> requestedReferenceIds = validateReferenceIds(referenceIds);
         chatRepository.findOwnedSession(userId, sessionId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -94,6 +94,7 @@ public class ChatMessageService {
                 traceId,
                 OffsetDateTime.now().plusMinutes(2),
                 delegation.token(),
+                requestedRoute,
                 safeContent,
                 sharedReferences);
         ChatAgentGenerationResult agentResult = invokeAgentOutsideTransaction(command);
@@ -117,13 +118,17 @@ public class ChatMessageService {
         }
     }
 
-    private void validateRequestedRoute(String route) {
+    private ChatRoute validateRequestedRoute(String route) {
         if (route == null || route.isBlank()) {
-            return;
+            return null;
         }
         String normalized = route.trim().toUpperCase(Locale.ROOT);
         try {
-            ChatRoute.valueOf(normalized);
+            ChatRoute requested = ChatRoute.valueOf(normalized);
+            if (requested == ChatRoute.OUT_OF_SCOPE) {
+                throw new IllegalArgumentException("OUT_OF_SCOPE is agent-owned");
+            }
+            return requested;
         } catch (IllegalArgumentException exception) {
             throw new ApiException(
                     ErrorCode.VALIDATION_ERROR,

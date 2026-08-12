@@ -75,7 +75,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(otherToken)))
                 .andExpect(status().isNotFound());
 
-        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
+        String referenceId = read(mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -86,7 +86,21 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                                 """.formatted(PRODUCT_ID)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.origin").value("USER_SHARED"))
-                .andExpect(jsonPath("$.introducedByMessageId").doesNotExist());
+                .andExpect(jsonPath("$.introducedByMessageId").doesNotExist())
+                .andReturn(), "$.id");
+
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceType": "FOOD_PRODUCT",
+                                  "sourceId": "%s"
+                                }
+                                """.formatted(PRODUCT_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(referenceId))
+                .andExpect(jsonPath("$.origin").value("USER_SHARED"));
 
         mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
@@ -235,6 +249,11 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                                   "route": "RECOMMENDATION"
                                 }
                                 """))
+                .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"hello\",\"route\":\"OUT_OF_SCOPE\"}"))
                 .andExpect(status().isUnprocessableEntity());
     }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
 import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
+import com.foodmind.foodmindbackend.integration.agent.dto.AgentChatRequest;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -42,6 +43,28 @@ class ChatAgentHttpAdapterTest {
         assertThat(result.responseStatus()).isEqualTo(ChatResponseStatus.UNSUPPORTED);
     }
 
+    @Test
+    void privateRequestCarriesRequestedRouteAndDeadline() {
+        OffsetDateTime expiresAt = OffsetDateTime.parse("2030-07-30T12:00:00Z");
+        ChatAgentCommand command = new ChatAgentCommand(
+                "chat-agent-v1",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "chat-adapter-test",
+                expiresAt,
+                "delegation-token",
+                ChatRoute.SEARCH,
+                "Find oat drinks",
+                List.of());
+
+        AgentChatRequest request = AgentChatRequest.from(command);
+
+        assertThat(request.expiresAt()).isEqualTo(expiresAt);
+        assertThat(request.requestedRoute()).isEqualTo(ChatRoute.SEARCH);
+    }
+
     private ChatAgentCommand command(String message) {
         return new ChatAgentCommand(
                 "chat-agent-v1",
@@ -52,6 +75,7 @@ class ChatAgentHttpAdapterTest {
                 "chat-adapter-test",
                 OffsetDateTime.parse("2030-07-30T12:00:00Z"),
                 "delegation-token",
+                null,
                 message,
                 List.of());
     }
