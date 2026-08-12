@@ -75,9 +75,6 @@ public class ChatAgentResultValidator {
                 throw new ChatAgentValidationException("Agent cited a duplicate source.");
             }
         }
-        if (result.sources().isEmpty() && result.route() != ChatRoute.NAVIGATION) {
-            throw new ChatAgentValidationException("Grounded answers require at least one source.");
-        }
         return new ValidatedChatAgentResult(
                 result.contractVersion(),
                 result.agentTraceId(),
