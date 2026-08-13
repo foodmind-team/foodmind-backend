@@ -82,7 +82,9 @@ public class ChatMessageService {
         List<UUID> referenceScope = inheritSessionReferences && requestedReferenceIds.isEmpty()
                 ? chatRepository.findSessionReferences(userId, sessionId).stream().map(ChatReference::id).toList()
                 : requestedReferenceIds;
-        List<ChatReference> sharedReferences = referenceQuery.resolveSessionReferences(userId, sessionId, referenceScope);
+        List<ChatReference> sharedReferences = referenceScope.isEmpty()
+                ? List.of()
+                : referenceQuery.resolveSessionReferences(userId, sessionId, referenceScope);
         validateExplicitReferences(requestedReferenceIds, sharedReferences);
         String traceId = traceId();
         UUID correlationId = correlationUuid(traceId);

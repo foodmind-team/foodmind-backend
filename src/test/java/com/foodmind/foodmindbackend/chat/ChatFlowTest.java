@@ -249,7 +249,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
-    void unsupportedRecommendationAndCookingIntentDoesNotInvokeThoseWorkflows() throws Exception {
+    void recommendationAndCookingIntentFallsBackWithoutInvokingThoseWorkflows() throws Exception {
         String accessToken = read(register("chat-unsupported@example.test", "Chat Unsupported"), "$.accessToken");
         String sessionId = createSession(accessToken, "Unsupported");
 
@@ -258,8 +258,8 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"recommend what I should cook tonight\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.route").value("OUT_OF_SCOPE"))
-                .andExpect(jsonPath("$.responseStatus").value("UNSUPPORTED"));
+                .andExpect(jsonPath("$.route").value("NAVIGATION"))
+                .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"));
         mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
