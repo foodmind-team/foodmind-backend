@@ -51,6 +51,7 @@ public class ChatMessageController {
                 sessionId,
                 request.content(),
                 request.referenceIds(),
+                request.useSessionReferences(),
                 request.route()));
     }
 

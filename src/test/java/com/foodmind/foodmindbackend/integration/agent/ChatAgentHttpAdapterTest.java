@@ -31,7 +31,7 @@ class ChatAgentHttpAdapterTest {
     }
 
     @Test
-    void unavailableAgentKeepsRecommendationRequestsOutOfScope() {
+    void unavailableAgentKeepsRecommendationQuestionsReadOnly() {
         ChatAgentClientProperties properties = new ChatAgentClientProperties();
         properties.setEnabled(false);
         ChatAgentHttpAdapter adapter = new ChatAgentHttpAdapter(
@@ -39,8 +39,9 @@ class ChatAgentHttpAdapterTest {
 
         var result = adapter.generate(command("Recommend a dinner for me."));
 
-        assertThat(result.route()).isEqualTo(ChatRoute.OUT_OF_SCOPE);
-        assertThat(result.responseStatus()).isEqualTo(ChatResponseStatus.UNSUPPORTED);
+        assertThat(result.route()).isEqualTo(ChatRoute.NAVIGATION);
+        assertThat(result.responseStatus()).isEqualTo(ChatResponseStatus.FALLBACK_SUCCEEDED);
+        assertThat(result.answer()).contains("read-only");
     }
 
     @Test

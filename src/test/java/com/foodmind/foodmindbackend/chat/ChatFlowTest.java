@@ -112,6 +112,19 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"))
                 .andExpect(jsonPath("$.sources[*].sourceId", hasItem(PRODUCT_ID)));
 
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "content": "answer without using earlier sources",
+                                  "referenceIds": [],
+                                  "useSessionReferences": false
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sources").isEmpty());
+
         mockMvc.perform(get("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
                 .andExpect(status().isOk())

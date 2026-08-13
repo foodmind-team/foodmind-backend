@@ -3144,11 +3144,16 @@ components:
           minLength: 1
           maxLength: 12000
         referenceIds:
+          description: Reference IDs selected for this message. An empty list is meaningful when useSessionReferences is false.
           type: array
           items:
             type: string
             format: uuid
           maxItems: 20
+        useSessionReferences:
+          description: When false, use only referenceIds for this message, including no references when the list is empty. When true or omitted, an empty referenceIds value inherits all active references previously shared with the session for backward compatibility.
+          type: boolean
+          default: true
         route:
           type: string
           nullable: true
@@ -3157,7 +3162,6 @@ components:
             - SUMMARY
             - COMPARE
             - NAVIGATION
-            - OUT_OF_SCOPE
     ShareChatReferenceRequest:
       type: object
       required:

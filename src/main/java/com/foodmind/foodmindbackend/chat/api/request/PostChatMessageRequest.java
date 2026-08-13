@@ -18,6 +18,7 @@ public record PostChatMessageRequest(
         String content,
         @Size(max = 20)
         List<UUID> referenceIds,
+        Boolean useSessionReferences,
         @Size(max = 40)
         String route) {
 }
