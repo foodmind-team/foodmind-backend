@@ -517,6 +517,15 @@ public class GenerateCookingPlan {
             if (decision != null) {
                 mapped.add(new AgentApprovedDecision(
                         decision.optionId(), decision.optionType(), decision.payload(), newRevision));
+                continue;
+            }
+            CookingPlanResult.ConfirmationQuestion question = questionsById.get(answer.questionId());
+            if (question != null && "TEXT".equals(question.responseType())) {
+                mapped.add(new AgentApprovedDecision(
+                        "answer:" + answer.questionId(),
+                        "provide_gap_value",
+                        Map.of("field_path", question.fieldPath(), "value", answer.value().trim()),
+                        newRevision));
             }
         }
         return mapped;

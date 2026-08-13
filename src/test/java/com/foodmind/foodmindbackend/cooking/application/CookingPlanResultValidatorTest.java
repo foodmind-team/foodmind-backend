@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationQuestion;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
@@ -49,14 +50,28 @@ class CookingPlanResultValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(confirmation))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("assumption");
+                .hasMessageContaining("actionable");
     }
 
     @Test
-    void acceptsConfirmationWithAQuestion() {
+    void rejectsConfirmationWithOnlyLegacyQuestion() {
         AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
                 "p-1", "NEEDS_CONFIRMATION", List.of(), List.of(), List.of("Would you like to proceed?"),
                 List.of(), List.of(), "p-1:v1", null);
+
+        assertThatThrownBy(() -> validator.validate(confirmation))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("actionable");
+    }
+
+    @Test
+    void acceptsConfirmationWithAnActionableStructuredQuestion() {
+        AgentConfirmationQuestion question = new AgentConfirmationQuestion(
+                "gap:temperature", "steps[0].target_temperature_c", "What target temperature?",
+                "TEXT", List.of(), true, null);
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                "p-1", "NEEDS_CONFIRMATION", List.of(), List.of(), List.of(question.prompt()),
+                List.of(question), List.of(), "p-1:v1", null);
 
         assertThatCode(() -> validator.validate(confirmation)).doesNotThrowAnyException();
     }
