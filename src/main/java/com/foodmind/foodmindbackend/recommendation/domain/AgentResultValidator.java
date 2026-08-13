@@ -58,7 +58,7 @@ public class AgentResultValidator {
 
         Set<UUID> seenIds = new HashSet<>();
         Set<Integer> seenRanks = new HashSet<>();
-        Set<RecommendationType> seenTypes = new HashSet<>();
+        BigDecimal previousScore = null;
         for (AgentCandidateResult candidate : candidates) {
             require(candidate.candidateId() != null, AgentFailureCode.UNKNOWN_ID);
             require(eligibleCandidates.containsKey(candidate.candidateId()), AgentFailureCode.UNKNOWN_ID);
@@ -66,10 +66,12 @@ public class AgentResultValidator {
             require(candidate.rank() >= 1 && candidate.rank() <= MAX_RETURNED_CANDIDATES, AgentFailureCode.SCHEMA_MISMATCH);
             require(seenRanks.add(candidate.rank()), AgentFailureCode.SCHEMA_MISMATCH);
             require(candidate.recommendationType() != null, AgentFailureCode.SCHEMA_MISMATCH);
-            seenTypes.add(candidate.recommendationType());
             require(candidate.modelScore() != null
                     && candidate.modelScore().compareTo(BigDecimal.ZERO) >= 0
                     && candidate.modelScore().compareTo(BigDecimal.ONE) <= 0, AgentFailureCode.SCHEMA_MISMATCH);
+            require(previousScore == null || previousScore.compareTo(candidate.modelScore()) >= 0,
+                    AgentFailureCode.SCHEMA_MISMATCH);
+            previousScore = candidate.modelScore();
             require(candidate.reasonCodes().size() > 0
                     && candidate.reasonCodes().size() <= MAX_REASON_CODES, AgentFailureCode.INVALID_REASON);
             validateReasons(eligibleCandidates.get(candidate.candidateId()).evidence(), candidate);
@@ -78,16 +80,12 @@ public class AgentResultValidator {
         for (int rank = 1; rank <= candidates.size(); rank++) {
             require(seenRanks.contains(rank), AgentFailureCode.SCHEMA_MISMATCH);
         }
-        if (candidates.size() == MAX_RETURNED_CANDIDATES) {
-            require(seenTypes.size() == MAX_RETURNED_CANDIDATES, AgentFailureCode.SCHEMA_MISMATCH);
+        if (!candidates.isEmpty()) {
+            AgentCandidateResult lead = candidates.stream()
+                    .min(Comparator.comparingInt(AgentCandidateResult::rank))
+                    .orElseThrow();
+            require(lead.recommendationType() == RecommendationType.PERSONAL, AgentFailureCode.SCHEMA_MISMATCH);
         }
-        boolean hasRecordCandidate = eligibleCandidates.values().stream()
-                .anyMatch(candidate -> candidate.evidence().sourceType() == CandidateSourceType.FOOD_RECORD);
-        if (hasRecordCandidate) {
-            require(candidates.stream().anyMatch(candidate -> eligibleCandidates.get(candidate.candidateId())
-                    .evidence().sourceType() == CandidateSourceType.FOOD_RECORD), AgentFailureCode.SOURCE_MIX_POLICY);
-        }
-
         return new ValidatedAgentResult(
                 result.contractVersion(),
                 result.modelVersion(),

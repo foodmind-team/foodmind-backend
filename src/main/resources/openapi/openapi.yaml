@@ -1784,7 +1784,13 @@ components:
           description: Backward-compatible alias for reasonCodes.
         explanation:
           type: string
-          description: Allow-listed grounded text. Model or fallback scores are never used as the explanation.
+          description: Allow-listed grounded text linking the model score to confirmed feature evidence; a score is never the sole explanation.
+        modelScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: Persisted ML probability for model-ranked candidates; null when deterministic fallback was used.
     RecommendationResponse:
       type: object
       required:

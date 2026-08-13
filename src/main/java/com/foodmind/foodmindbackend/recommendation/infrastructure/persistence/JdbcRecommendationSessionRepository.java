@@ -376,6 +376,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                        COALESCE((rc.evidence_snapshot ->> 'historicalPrice')::boolean, false) AS historical_price,
                        rc.candidate_type,
                        rc.rank,
+                       rc.model_score,
                        rc.fallback_score
                 FROM recommendation_candidate rc
                 LEFT JOIN place_meal pm ON pm.id = rc.place_meal_id
@@ -404,6 +405,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                         candidate.rank(),
                         reasons.getOrDefault(candidate.candidateId(), List.of()),
                         candidate.explanation(),
+                        candidate.modelScore(),
                         candidate.fallbackScore(),
                         candidate.recordOwnerDisplayName(),
                         candidate.recordOccurredAt(),
@@ -450,6 +452,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                 rs.getInt("rank"),
                 List.of(),
                 explanationFromSnapshot(rs.getObject("candidate_id", UUID.class)),
+                rs.getBigDecimal("model_score"),
                 rs.getBigDecimal("fallback_score"),
                 rs.getString("record_owner_display_name"),
                 rs.getObject("record_occurred_at", OffsetDateTime.class),
