@@ -137,6 +137,36 @@ class AgentResultValidatorTest {
                 .isEqualTo(AgentFailureCode.SCHEMA_MISMATCH);
     }
 
+    @Test
+    void rejectsCandidatesThatAreNotOrderedByDescendingModelScore() throws Exception {
+        AgentGenerationResult result = resultFromFixture("valid-normal-response.json");
+        List<AgentCandidateResult> reversedScores = result.candidates().stream()
+                .map(candidate -> new AgentCandidateResult(
+                        candidate.candidateId(),
+                        candidate.rank(),
+                        candidate.recommendationType(),
+                        BigDecimal.ONE.subtract(candidate.modelScore()),
+                        candidate.reasonCodes(),
+                        candidate.explanation(),
+                        candidate.featureSnapshot()))
+                .toList();
+        AgentGenerationResult unordered = AgentGenerationResult.success(
+                result.contractVersion(),
+                result.requestId(),
+                result.sessionId(),
+                result.traceId(),
+                result.agentTraceId(),
+                result.modelStatus(),
+                result.modelVersion(),
+                result.featureSchemaVersion(),
+                reversedScores);
+
+        assertThatThrownBy(() -> validator.validate(command(), unordered))
+                .isInstanceOf(AgentValidationException.class)
+                .extracting("failureCode")
+                .isEqualTo(AgentFailureCode.SCHEMA_MISMATCH);
+    }
+
     private RecommendationAgentCommand command() {
         return new RecommendationAgentCommand(
                 AgentResultValidator.SUPPORTED_CONTRACT_VERSION,
