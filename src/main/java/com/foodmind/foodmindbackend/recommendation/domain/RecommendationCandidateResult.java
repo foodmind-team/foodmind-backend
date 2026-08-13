@@ -27,6 +27,7 @@ public record RecommendationCandidateResult(
         int rank,
         List<ReasonCode> reasonCodes,
         String explanation,
+        BigDecimal modelScore,
         BigDecimal fallbackScore,
         String recordOwnerDisplayName,
         java.time.OffsetDateTime recordOccurredAt,

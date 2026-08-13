@@ -84,6 +84,7 @@ class RecommendationAgentFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.fallbackStatus").value("NOT_REQUIRED"))
                 .andExpect(jsonPath("$.fallbackVersion").doesNotExist())
                 .andExpect(jsonPath("$.items[0].recommendationType").value("PERSONAL"))
+                .andExpect(jsonPath("$.items[0].modelScore").value(0.87))
                 .andExpect(jsonPath("$.items[0].reasonCodes[0]").value("WITHIN_BUDGET"))
                 .andReturn();
 

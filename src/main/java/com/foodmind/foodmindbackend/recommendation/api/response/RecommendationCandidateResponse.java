@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.recommendation.api.response;
 
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationCandidateResult;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +28,7 @@ public record RecommendationCandidateResponse(
         List<String> reasonCodes,
         List<String> reasons,
         String explanation,
+        BigDecimal modelScore,
         String recordOwnerDisplayName,
         java.time.OffsetDateTime recordOccurredAt,
         String priceKind) {
@@ -49,6 +51,7 @@ public record RecommendationCandidateResponse(
                 codes,
                 codes,
                 candidate.explanation(),
+                candidate.modelScore(),
                 candidate.recordOwnerDisplayName(),
                 candidate.recordOccurredAt(),
                 candidate.historicalPrice() ? "LAST_RECORDED" : "CURRENT");
