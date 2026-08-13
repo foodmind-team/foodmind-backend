@@ -39,13 +39,11 @@ public class CookingPlanResultValidator {
     }
 
     private void validateConfirmation(AgentConfirmationPlanResponse response) {
-        boolean hasContent = !response.assumptions().isEmpty()
-                || !response.repairOptions().isEmpty()
-                || !response.questions().isEmpty()
-                || !response.confirmationQuestions().isEmpty();
-        if (!hasContent) {
+        boolean hasStructuredQuestion = !response.confirmationQuestions().isEmpty();
+        boolean hasProjectableLegacyDecision = !response.questions().isEmpty() && !response.decisions().isEmpty();
+        if (!hasStructuredQuestion && !hasProjectableLegacyDecision) {
             throw new IllegalArgumentException(
-                    "NEEDS_CONFIRMATION response: must have at least one assumption, repair_option, or question");
+                    "NEEDS_CONFIRMATION response: must contain an actionable confirmation_question or decision");
         }
     }
 

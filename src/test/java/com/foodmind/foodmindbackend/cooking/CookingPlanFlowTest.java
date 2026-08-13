@@ -295,6 +295,42 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void textGapAnswerIsResubmittedAsStructuredFieldDecision() throws Exception {
+        AtomicReference<AgentGeneratePlanRequest> lastRequest = new AtomicReference<>();
+        AGENT_RESPONSE.set(request -> {
+            lastRequest.set(request);
+            return request.planRevision() == null ? textGapConfirmationAgentResult(request) : readyAgentResult(request);
+        });
+        String accessToken = read(register("cooking-gap-answer@example.test", "Cooking Gap Answer"), "$.accessToken");
+
+        MvcResult confirmation = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "gap-answer-gen-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"))
+                .andReturn();
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/decisions", read(confirmation, "$.planId"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "gap-answer-submit-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                [ { "questionId": "gap:temperature", "value": "75" } ]
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"));
+
+        assertThat(lastRequest.get().approvedDecisions()).singleElement().satisfies(decision -> {
+            assertThat(decision.optionType()).isEqualTo("provide_gap_value");
+            assertThat(decision.payload()).containsEntry(
+                    "field_path", "recipe.recipe-1.steps[0].target_temperature_c");
+            assertThat(decision.payload()).containsEntry("value", "75");
+        });
+    }
+
+    @Test
     void decisionsOnNonConfirmationPlanConflicts() throws Exception {
         String accessToken = read(register("cooking-stale@example.test", "Cooking Stale"), "$.accessToken");
         String planId = read(mockMvc.perform(post("/api/v1/cooking-plans/generate")
@@ -754,6 +790,18 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                                 false, "opt-1")),
                 List.of(new AgentDecision("opt-1", "reduce_servings", Map.of("servings", 2), revision)),
                 revision, null);
+        return CookingAgentResult.of(confirmation, json(confirmation));
+    }
+
+    private static CookingAgentResult textGapConfirmationAgentResult(AgentGeneratePlanRequest request) {
+        String revision = request.requestId() + ":v1";
+        AgentConfirmationPlanResponse confirmation = new AgentConfirmationPlanResponse(
+                request.requestId(), "NEEDS_CONFIRMATION", List.of(), List.of(),
+                List.of("What safe internal temperature should be used?"),
+                List.of(new AgentConfirmationQuestion(
+                        "gap:temperature", "recipe.recipe-1.steps[0].target_temperature_c",
+                        "What safe internal temperature should be used?", "TEXT", List.of(), true, "75")),
+                List.of(), revision, null);
         return CookingAgentResult.of(confirmation, json(confirmation));
     }
 
