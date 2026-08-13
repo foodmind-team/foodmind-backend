@@ -117,7 +117,8 @@ public class GenerateCookingPlan {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Select at least one saved recipe.");
         }
         String traceId = traceId();
-        AgentGeneratePlanRequest agentRequest = assembler.assemble(userId, request, mergedRules, candidates, traceId);
+        AgentGeneratePlanRequest agentRequest =
+                assembler.assembleForAsync(userId, request, mergedRules, candidates, traceId);
         // Hash the PUBLIC request snapshot (never the agent request, which embeds a per-call trace id).
         String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
         return submitPreparedAsync(userId, agentRequest,

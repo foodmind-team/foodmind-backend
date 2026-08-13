@@ -46,6 +46,30 @@ public class CookingAgentRequestAssembler {
             CookingPreferenceRules mergedRules,
             List<RecipeCandidate> candidates,
             String traceId) {
+        return assemble(userId, request, mergedRules, candidates, traceId, true);
+    }
+
+    /**
+     * Builds an async request without making a synchronous LLM preprocessing call.
+     * The Cooking Agent worker performs the same parsing after the task has been
+     * accepted, allowing clients to receive a task handle and progress immediately.
+     */
+    public AgentGeneratePlanRequest assembleForAsync(
+            UUID userId,
+            CookingPlanRequestContext request,
+            CookingPreferenceRules mergedRules,
+            List<RecipeCandidate> candidates,
+            String traceId) {
+        return assemble(userId, request, mergedRules, candidates, traceId, false);
+    }
+
+    private AgentGeneratePlanRequest assemble(
+            UUID userId,
+            CookingPlanRequestContext request,
+            CookingPreferenceRules mergedRules,
+            List<RecipeCandidate> candidates,
+            String traceId,
+            boolean preprocess) {
         return new AgentGeneratePlanRequest(
                 sanitise(traceId),
                 userId.toString(),
@@ -62,7 +86,7 @@ public class CookingAgentRequestAssembler {
                 "1.0",
                 null,
                 properties.getRegion(),
-                preprocessCandidates(candidates, request.servings()));
+                preprocess ? preprocessCandidates(candidates, request.servings()) : List.of());
     }
 
     /** Rebuilds a persisted request with the user's current inventory snapshot. */

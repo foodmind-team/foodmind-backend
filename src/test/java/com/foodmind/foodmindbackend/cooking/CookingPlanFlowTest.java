@@ -80,6 +80,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
             new AtomicReference<>(CookingPlanFlowTest::runningTaskSnapshot);
     private static final AtomicBoolean REMOTE_CALL_OBSERVED_TRANSACTION = new AtomicBoolean(true);
     private static final AtomicInteger AGENT_CALL_COUNT = new AtomicInteger();
+    private static final AtomicInteger PREPROCESS_CALL_COUNT = new AtomicInteger();
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Autowired
@@ -103,6 +104,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         TASK_SNAPSHOT.set(CookingPlanFlowTest::runningTaskSnapshot);
         REMOTE_CALL_OBSERVED_TRANSACTION.set(true);
         AGENT_CALL_COUNT.set(0);
+        PREPROCESS_CALL_COUNT.set(0);
     }
 
     @Test
@@ -518,6 +520,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         // Submission ran outside any database transaction; task handle is persisted.
         assertThat(REMOTE_CALL_OBSERVED_TRANSACTION).isFalse();
         assertThat(AGENT_CALL_COUNT).hasValue(1);
+        assertThat(PREPROCESS_CALL_COUNT).as("async submission must return before LLM preprocessing").hasValue(0);
         String agentTaskId = jdbcTemplate.queryForObject(
                 "SELECT agent_task_id FROM cooking_plan WHERE id = ?", String.class, UUID.fromString(planId));
         assertThat(agentTaskId).isEqualTo("task-async-1");
@@ -1024,6 +1027,7 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
 
                 @Override
                 public List<Map<String, Object>> preprocess(List<AgentRecipeInput> recipes) {
+                    PREPROCESS_CALL_COUNT.incrementAndGet();
                     // Test stub: no pre-parsed candidates — the agent parses internally.
                     return List.of();
                 }
