@@ -66,16 +66,25 @@ public class ChatMessageService {
         this.meterRegistry = meterRegistry;
     }
 
-    public ChatMessage post(UUID userId, UUID sessionId, String content, List<UUID> referenceIds, String route) {
+    public ChatMessage post(
+            UUID userId,
+            UUID sessionId,
+            String content,
+            List<UUID> referenceIds,
+            Boolean useSessionReferences,
+            String route) {
         String safeContent = validateContent(content);
         ChatRoute requestedRoute = validateRequestedRoute(route);
         List<UUID> requestedReferenceIds = validateReferenceIds(referenceIds);
         chatRepository.findOwnedSession(userId, sessionId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        List<UUID> referenceScope = requestedReferenceIds.isEmpty()
+        boolean inheritSessionReferences = useSessionReferences == null || useSessionReferences;
+        List<UUID> referenceScope = inheritSessionReferences && requestedReferenceIds.isEmpty()
                 ? chatRepository.findSessionReferences(userId, sessionId).stream().map(ChatReference::id).toList()
                 : requestedReferenceIds;
-        List<ChatReference> sharedReferences = referenceQuery.resolveSessionReferences(userId, sessionId, referenceScope);
+        List<ChatReference> sharedReferences = referenceScope.isEmpty()
+                ? List.of()
+                : referenceQuery.resolveSessionReferences(userId, sessionId, referenceScope);
         validateExplicitReferences(requestedReferenceIds, sharedReferences);
         String traceId = traceId();
         UUID correlationId = correlationUuid(traceId);

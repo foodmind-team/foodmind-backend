@@ -16,7 +16,6 @@ import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,20 +129,6 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
     }
 
     private ChatAgentGenerationResult fallback(ChatAgentCommand command) {
-        String normalized = command.message().toLowerCase(Locale.ROOT);
-        if (normalized.contains("recommend") || normalized.contains("cook") || normalized.contains("recipe")) {
-            return ChatAgentGenerationResult.success(
-                    command.contractVersion(),
-                    command.requestId(),
-                    command.sessionId(),
-                    command.userMessageId(),
-                    command.traceId(),
-                    "chat-fallback",
-                    ChatRoute.OUT_OF_SCOPE,
-                    ChatResponseStatus.UNSUPPORTED,
-                    "Chat supports searching, summarising, and comparing authorised FoodMind records, products, and places. Recommendations and cooking plans use their dedicated workflows.",
-                    List.of());
-        }
         List<ChatReference> available = command.sharedReferences().stream()
                 .filter(ChatReference::available)
                 .limit(3)
@@ -158,8 +143,8 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                     "chat-fallback",
                     ChatRoute.NAVIGATION,
                     ChatResponseStatus.FALLBACK_SUCCEEDED,
-                    "I can help you navigate FoodMind. Share a record, product, or place for a grounded answer, "
-                            + "or use Recommendations to choose food and Cooking to build a plan.",
+                    "I can help with read-only questions and FoodMind navigation. "
+                            + "I never execute recommendation or cooking actions; open their dedicated workflows to do that.",
                     List.of());
         }
         return ChatAgentGenerationResult.success(

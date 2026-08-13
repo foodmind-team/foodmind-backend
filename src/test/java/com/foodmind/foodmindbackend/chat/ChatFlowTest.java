@@ -112,6 +112,19 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"))
                 .andExpect(jsonPath("$.sources[*].sourceId", hasItem(PRODUCT_ID)));
 
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "content": "answer without using earlier sources",
+                                  "referenceIds": [],
+                                  "useSessionReferences": false
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sources").isEmpty());
+
         mockMvc.perform(get("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
                 .andExpect(status().isOk())
@@ -236,7 +249,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
-    void unsupportedRecommendationAndCookingIntentDoesNotInvokeThoseWorkflows() throws Exception {
+    void recommendationAndCookingIntentFallsBackWithoutInvokingThoseWorkflows() throws Exception {
         String accessToken = read(register("chat-unsupported@example.test", "Chat Unsupported"), "$.accessToken");
         String sessionId = createSession(accessToken, "Unsupported");
 
@@ -245,8 +258,8 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"recommend what I should cook tonight\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.route").value("OUT_OF_SCOPE"))
-                .andExpect(jsonPath("$.responseStatus").value("UNSUPPORTED"));
+                .andExpect(jsonPath("$.route").value("NAVIGATION"))
+                .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"));
         mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
