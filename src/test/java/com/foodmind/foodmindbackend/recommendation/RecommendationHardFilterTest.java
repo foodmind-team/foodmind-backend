@@ -39,6 +39,22 @@ class RecommendationHardFilterTest {
                 .isEqualTo(FilterCode.CLEANLINESS_EVIDENCE);
     }
 
+    @Test
+    void incompleteAllergenEvidenceFailsClosedWhenRestrictionExists() {
+        CandidateEvidence base = candidate();
+        CandidateEvidence incomplete = new CandidateEvidence(
+                base.placeMealId(), base.mealId(), base.mealName(), base.mealType(), base.categoryCode(),
+                base.cuisineCode(), base.placeId(), base.placeName(), base.area(), base.latitude(), base.longitude(),
+                base.price(), base.spiceLevel(), base.available(), base.cleanliness(), base.dietaryTagCodes(),
+                List.of(), false, base.wantToTry(), base.personalRecordCount(), base.personalAverageRating(),
+                base.lastPersonalRecordAt(), base.groupRecordCount(), base.groupAverageRating(),
+                base.lastGroupRecordAt(), base.distanceKm(), base.sourceType(), base.foodRecordId(),
+                base.recordOwnerDisplayName(), base.recordOccurredAt(), base.historicalPrice());
+
+        assertThat(pipeline.evaluate(request(List.of("SOY"), List.of()), preferences(), incomplete).filterCode())
+                .isEqualTo(FilterCode.ALLERGEN);
+    }
+
     private RecommendationRequestContext request(List<String> avoidAllergens, List<String> requiredDietary) {
         return new RecommendationRequestContext(
                 null,

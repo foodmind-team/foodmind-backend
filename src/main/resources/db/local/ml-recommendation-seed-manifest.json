@@ -1,0 +1,24 @@
+{
+  "generatedSqlSha256": "1fd9f6ff4b1bed9138c69badc168b32b7e41b33d58d65b7accb85c4621ae5558",
+  "mealCount": 96,
+  "offeringCount": 96,
+  "restaurantCount": 6,
+  "schemaVersion": "foodmind-local-recommendation-seed-v1",
+  "selection": {
+    "availability": true,
+    "branchMatchStatus": [
+      "manual_user_provided_menu",
+      "target_branch_match"
+    ],
+    "categoryGroup": "main_dish",
+    "needsManualReview": false,
+    "requiresPrice": true
+  },
+  "sourceCommit": "6b5b417411e04f5388d0eab39e1a57dee9d92676",
+  "sourceFiles": {
+    "data/external/menu_search_targets_curated.csv": "0aaba2db0643bd1bdb87178899ad53fda36218aeaebc76aef44f4dd33d8b4afe",
+    "data/external/nea_menu_search_candidates.csv": "173e6a27a38051ddbff8d640eca372221c70f64e0f24af6711818d09537e39ad",
+    "data/interim/restaurant_menu_collected.csv": "b2b9d609de5343d2e76ea51bce345d98653724f6b3747d77c238ca68034ee7a9",
+    "scripts/build_restaurant_side.py": "294ccbeb83347b4987e6d3ff850bdb97324f643761df6b51882e93d9d4d9ae11"
+  }
+}

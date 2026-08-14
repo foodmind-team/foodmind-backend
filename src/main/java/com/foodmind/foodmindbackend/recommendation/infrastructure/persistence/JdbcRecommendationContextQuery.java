@@ -54,11 +54,30 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                       AND gm.status = 'ACTIVE'
                       AND tg.status = 'ACTIVE'
                       AND (:groupProvided = false OR gm.group_id = :groupId)
+                ), rejected_target AS (
+                    SELECT DISTINCT
+                           COALESCE(rejected_offering.meal_id, rejected_record.meal_id) AS meal_id,
+                           COALESCE(rejected_offering.place_id, rejected_record.place_id) AS place_id,
+                           rejected_candidate.food_record_id
+                    FROM recommendation_feedback feedback
+                    JOIN recommendation_candidate rejected_candidate
+                      ON rejected_candidate.id = feedback.candidate_id
+                    LEFT JOIN place_meal rejected_offering
+                      ON rejected_offering.id = rejected_candidate.place_meal_id
+                    LEFT JOIN food_record rejected_record
+                      ON rejected_record.id = rejected_candidate.food_record_id
+                    WHERE feedback.user_id = :userId
+                      AND feedback.event_type = 'REJECTED'
+                      AND (
+                          feedback.reason_code = 'DO_NOT_RECOMMEND'
+                          OR feedback.effective_until > CURRENT_TIMESTAMP
+                      )
                 )
                 SELECT pm.id AS place_meal_id,
                        m.id AS meal_id,
                        m.name AS meal_name,
                        m.meal_type,
+                       COALESCE(pm.recommendation_category_code, m.meal_type) AS category_code,
                        c.code AS cuisine_code,
                        p.id AS place_id,
                        p.name AS place_name,
@@ -74,6 +93,7 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                        po.source_kind AS cleanliness_source_kind,
                        COALESCE(dietary.codes, ARRAY[]::varchar[]) AS dietary_codes,
                        COALESCE(allergen.codes, ARRAY[]::varchar[]) AS allergen_codes,
+                       m.allergen_evidence_complete,
                        EXISTS (
                            SELECT 1
                            FROM want_to_try wtt
@@ -142,6 +162,12 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                   AND m.curation_status = 'ACTIVE'
                   AND p.curation_status = 'ACTIVE'
                   AND (:mealType IS NULL OR m.meal_type = :mealType)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM rejected_target rejected
+                      WHERE rejected.meal_id = m.id
+                        AND rejected.place_id = p.id
+                  )
                 ORDER BY m.meal_type, pm.price, pm.id
                 LIMIT :limit
                 """,
@@ -185,11 +211,30 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                       AND gm.status = 'ACTIVE'
                       AND tg.status = 'ACTIVE'
                       AND (:groupProvided = false OR gm.group_id = :groupId)
+                ), rejected_target AS (
+                    SELECT DISTINCT
+                           COALESCE(rejected_offering.meal_id, rejected_record.meal_id) AS meal_id,
+                           COALESCE(rejected_offering.place_id, rejected_record.place_id) AS place_id,
+                           rejected_candidate.food_record_id
+                    FROM recommendation_feedback feedback
+                    JOIN recommendation_candidate rejected_candidate
+                      ON rejected_candidate.id = feedback.candidate_id
+                    LEFT JOIN place_meal rejected_offering
+                      ON rejected_offering.id = rejected_candidate.place_meal_id
+                    LEFT JOIN food_record rejected_record
+                      ON rejected_record.id = rejected_candidate.food_record_id
+                    WHERE feedback.user_id = :userId
+                      AND feedback.event_type = 'REJECTED'
+                      AND (
+                          feedback.reason_code = 'DO_NOT_RECOMMEND'
+                          OR feedback.effective_until > CURRENT_TIMESTAMP
+                      )
                 )
                 SELECT fr.id AS food_record_id,
                        m.id AS meal_id,
                        COALESCE(m.name, fr.meal_name_snapshot) AS meal_name,
                        COALESCE(m.meal_type, 'RECORD') AS meal_type,
+                       COALESCE(offering_category.recommendation_category_code, m.meal_type, 'RECORD') AS category_code,
                        COALESCE(c.code, 'UNKNOWN') AS cuisine_code,
                        p.id AS place_id,
                        COALESCE(p.name, fr.place_name_snapshot) AS place_name,
@@ -201,6 +246,7 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                        po.source_kind AS cleanliness_source_kind,
                        COALESCE(dietary.codes, ARRAY[]::varchar[]) AS dietary_codes,
                        COALESCE(allergen.codes, ARRAY[]::varchar[]) AS allergen_codes,
+                       COALESCE(m.allergen_evidence_complete, false) AS allergen_evidence_complete,
                        fr.rating,
                        fr.occurred_at,
                        CASE WHEN fr.owner_user_id = :userId THEN 1 ELSE 0 END AS personal_record_count,
@@ -232,11 +278,32 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                     FROM meal_allergen ma JOIN allergen a ON a.id = ma.allergen_id
                     WHERE ma.meal_id = m.id
                 ) allergen ON true
+                LEFT JOIN LATERAL (
+                    SELECT pm.recommendation_category_code
+                    FROM place_meal pm
+                    WHERE pm.meal_id = m.id
+                      AND pm.place_id = p.id
+                    ORDER BY pm.available DESC, pm.id
+                    LIMIT 1
+                ) offering_category ON true
                 WHERE fr.deleted_at IS NULL
                   AND (fr.owner_user_id = :userId OR (
                         fr.visibility = 'GROUP' AND EXISTS (
                             SELECT 1 FROM active_group ag WHERE ag.group_id = fr.group_id)))
                   AND (:mealType IS NULL OR m.meal_type = :mealType)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM rejected_target rejected
+                      WHERE (
+                          rejected.meal_id IS NOT NULL
+                          AND rejected.place_id IS NOT NULL
+                          AND rejected.meal_id = fr.meal_id
+                          AND rejected.place_id = fr.place_id
+                      ) OR (
+                          (rejected.meal_id IS NULL OR rejected.place_id IS NULL)
+                          AND rejected.food_record_id = fr.id
+                      )
+                  )
                 ORDER BY CASE WHEN fr.owner_user_id = :userId THEN 0 ELSE 1 END,
                          fr.would_eat_again DESC NULLS LAST, fr.rating DESC NULLS LAST,
                          fr.occurred_at DESC, fr.id
@@ -362,6 +429,7 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                 rs.getObject("meal_id", UUID.class),
                 rs.getString("meal_name"),
                 rs.getString("meal_type"),
+                rs.getString("category_code"),
                 rs.getString("cuisine_code"),
                 rs.getObject("place_id", UUID.class),
                 rs.getString("place_name"),
@@ -374,6 +442,7 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                 cleanliness,
                 stringArray(rs.getArray("dietary_codes")),
                 stringArray(rs.getArray("allergen_codes")),
+                rs.getBoolean("allergen_evidence_complete"),
                 rs.getBoolean("want_to_try"),
                 rs.getInt("personal_record_count"),
                 rs.getBigDecimal("personal_average_rating"),
@@ -381,7 +450,9 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
                 rs.getInt("group_record_count"),
                 rs.getBigDecimal("group_average_rating"),
                 rs.getObject("last_group_record_at", OffsetDateTime.class),
-                distanceKm(originLatitude, originLongitude, latitude, longitude));
+                distanceKm(originLatitude, originLongitude, latitude, longitude),
+                com.foodmind.foodmindbackend.recommendation.domain.CandidateSourceType.PLACE_MEAL,
+                null, null, null, false);
     }
 
     private CandidateEvidence foodRecordCandidateRow(ResultSet rs, BigDecimal originLatitude, BigDecimal originLongitude)
@@ -392,11 +463,13 @@ public class JdbcRecommendationContextQuery implements RecommendationContextQuer
         String currency = rs.getString("currency");
         return new CandidateEvidence(
                 null, rs.getObject("meal_id", UUID.class), rs.getString("meal_name"), rs.getString("meal_type"),
-                rs.getString("cuisine_code"), rs.getObject("place_id", UUID.class), rs.getString("place_name"),
+                rs.getString("category_code"), rs.getString("cuisine_code"), rs.getObject("place_id", UUID.class),
+                rs.getString("place_name"),
                 rs.getString("area"), latitude, longitude,
                 priceAmount == null || currency == null ? null : new MoneyAmount(priceAmount, currency.trim()),
                 getInteger(rs, "spice_level"), true, cleanliness(rs), stringArray(rs.getArray("dietary_codes")),
-                stringArray(rs.getArray("allergen_codes")), false, rs.getInt("personal_record_count"),
+                stringArray(rs.getArray("allergen_codes")), rs.getBoolean("allergen_evidence_complete"), false,
+                rs.getInt("personal_record_count"),
                 rs.getBigDecimal("personal_average_rating"), rs.getObject("last_personal_record_at", OffsetDateTime.class),
                 rs.getInt("group_record_count"), rs.getBigDecimal("group_average_rating"),
                 rs.getObject("last_group_record_at", OffsetDateTime.class), distanceKm(originLatitude, originLongitude, latitude, longitude),

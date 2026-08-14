@@ -125,6 +125,7 @@ public class RecommendationTransactionService {
     private Map<String, Object> featureSnapshot(CandidateEvidence evidence) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("mealType", evidence.mealType());
+        snapshot.put("categoryCode", evidence.categoryCode());
         snapshot.put("cuisineCode", evidence.cuisineCode());
         snapshot.put("area", evidence.area());
         snapshot.put("priceAmount", amount(evidence));
@@ -134,6 +135,7 @@ public class RecommendationTransactionService {
         snapshot.put("cleanlinessScore", evidence.cleanliness() == null ? null : evidence.cleanliness().score());
         snapshot.put("dietaryTagCodes", evidence.dietaryTagCodes());
         snapshot.put("allergenCodes", evidence.allergenCodes());
+        snapshot.put("allergenEvidenceComplete", evidence.allergenEvidenceComplete());
         snapshot.put("wantToTry", evidence.wantToTry());
         snapshot.put("personalRecordCount", evidence.personalRecordCount());
         snapshot.put("personalAverageRating", evidence.personalAverageRating());
