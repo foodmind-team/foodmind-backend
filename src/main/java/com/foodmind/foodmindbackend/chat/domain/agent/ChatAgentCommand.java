@@ -24,5 +24,33 @@ public record ChatAgentCommand(
         String delegationToken,
         ChatRoute requestedRoute,
         String message,
-        List<ChatReference> sharedReferences) {
+        List<ChatReference> sharedReferences,
+        List<ChatConversationTurn> recentTurns) {
+
+    public ChatAgentCommand(
+            String contractVersion,
+            UUID requestId,
+            UUID sessionId,
+            UUID userMessageId,
+            UUID userId,
+            String traceId,
+            OffsetDateTime expiresAt,
+            String delegationToken,
+            ChatRoute requestedRoute,
+            String message,
+            List<ChatReference> sharedReferences) {
+        this(
+                contractVersion,
+                requestId,
+                sessionId,
+                userMessageId,
+                userId,
+                traceId,
+                expiresAt,
+                delegationToken,
+                requestedRoute,
+                message,
+                sharedReferences,
+                List.of());
+    }
 }

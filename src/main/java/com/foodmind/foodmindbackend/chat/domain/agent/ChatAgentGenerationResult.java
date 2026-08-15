@@ -24,7 +24,9 @@ public record ChatAgentGenerationResult(
         ChatRoute route,
         ChatResponseStatus responseStatus,
         String answer,
-        List<ChatAgentSourceResult> sources) {
+        List<ChatAgentSourceResult> sources,
+        List<String> suggestedQuestions,
+        List<String> suggestedDestinations) {
 
     public static ChatAgentGenerationResult success(
             String contractVersion,
@@ -37,6 +39,34 @@ public record ChatAgentGenerationResult(
             ChatResponseStatus responseStatus,
             String answer,
             List<ChatAgentSourceResult> sources) {
+        return success(
+                contractVersion,
+                requestId,
+                sessionId,
+                userMessageId,
+                traceId,
+                agentTraceId,
+                route,
+                responseStatus,
+                answer,
+                sources,
+                List.of(),
+                List.of());
+    }
+
+    public static ChatAgentGenerationResult success(
+            String contractVersion,
+            UUID requestId,
+            UUID sessionId,
+            UUID userMessageId,
+            String traceId,
+            String agentTraceId,
+            ChatRoute route,
+            ChatResponseStatus responseStatus,
+            String answer,
+            List<ChatAgentSourceResult> sources,
+            List<String> suggestedQuestions,
+            List<String> suggestedDestinations) {
         return new ChatAgentGenerationResult(
                 true,
                 null,
@@ -49,7 +79,9 @@ public record ChatAgentGenerationResult(
                 route,
                 responseStatus,
                 answer,
-                sources == null ? List.of() : sources);
+                sources == null ? List.of() : List.copyOf(sources),
+                suggestedQuestions == null ? List.of() : List.copyOf(suggestedQuestions),
+                suggestedDestinations == null ? List.of() : List.copyOf(suggestedDestinations));
     }
 
     public static ChatAgentGenerationResult failure(
@@ -72,6 +104,8 @@ public record ChatAgentGenerationResult(
                 null,
                 null,
                 null,
+                List.of(),
+                List.of(),
                 List.of());
     }
 }

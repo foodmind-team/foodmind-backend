@@ -164,10 +164,12 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
         UUID correlationId = messageCorrelation(sessionId, userMessageId);
         jdbcTemplate.update("""
                 INSERT INTO chat_message (
-                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id
+                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id,
+                    suggested_questions, suggested_destinations
                 )
                 VALUES (
-                    :id, :sessionId, 'ASSISTANT', :content, :route, :responseStatus, :correlationId, :agentTraceId
+                    :id, :sessionId, 'ASSISTANT', :content, :route, :responseStatus, :correlationId, :agentTraceId,
+                    CAST(:suggestedQuestions AS jsonb), CAST(:suggestedDestinations AS jsonb)
                 )
                 """,
                 new MapSqlParameterSource()
@@ -177,7 +179,9 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         .addValue("route", result.route().name())
                         .addValue("responseStatus", result.responseStatus().name())
                         .addValue("correlationId", correlationId)
-                        .addValue("agentTraceId", result.agentTraceId()));
+                        .addValue("agentTraceId", result.agentTraceId())
+                        .addValue("suggestedQuestions", toJson(result.suggestedQuestions()))
+                        .addValue("suggestedDestinations", toJson(result.suggestedDestinations())));
         for (ChatAgentSourceResult source : result.sources()) {
             ChatReference reference = findReferenceBySource(sessionId, source.sourceType(), source.sourceId())
                     .orElseGet(() -> insertMessageReference(sessionId, assistantMessageId, source.sourceType(), source.sourceId()));
@@ -232,7 +236,8 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 .addValue("afterCreatedAt", after == null ? null : after.createdAt())
                 .addValue("afterId", after == null ? null : after.id());
         List<ChatMessage> rows = jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at
+                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                       suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
                   AND (
@@ -259,7 +264,9 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.correlationId(),
                         message.agentTraceId(),
                         message.createdAt(),
-                        sources(message.sessionId(), message.id())))
+                        sources(message.sessionId(), message.id()),
+                        message.suggestedQuestions(),
+                        message.suggestedDestinations()))
                 .toList();
         String nextCursor = hydrated.size() > size ? new ChatCursor(hydrated.get(size - 1).createdAt(), hydrated.get(size - 1).id()).encode() : null;
         return new ChatPage<>(new ArrayList<>(hydrated.subList(0, Math.min(hydrated.size(), size))), nextCursor, nextCursor != null);
@@ -467,7 +474,8 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
 
     private Optional<ChatMessage> findMessage(UUID sessionId, UUID messageId) {
         return jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at
+                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                       suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
                   AND id = :messageId
@@ -488,7 +496,9 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.correlationId(),
                         message.agentTraceId(),
                         message.createdAt(),
-                        sources(sessionId, messageId)));
+                        sources(sessionId, messageId),
+                        message.suggestedQuestions(),
+                        message.suggestedDestinations()));
     }
 
     private List<ChatMessageSource> sources(UUID sessionId, UUID messageId) {
@@ -592,7 +602,9 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("agent_trace_id"),
                 rs.getObject("created_at", OffsetDateTime.class),
-                List.of());
+                List.of(),
+                jsonStringList(rs.getString("suggested_questions")),
+                jsonStringList(rs.getString("suggested_destinations")));
     }
 
     private ChatReference referenceRow(ResultSet rs, int rowNum) throws SQLException {
@@ -668,6 +680,19 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
             });
         } catch (JacksonException exception) {
             return Map.of();
+        }
+    }
+
+    private List<String> jsonStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> values = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return values == null ? List.of() : List.copyOf(values);
+        } catch (JacksonException | NullPointerException exception) {
+            return List.of();
         }
     }
 

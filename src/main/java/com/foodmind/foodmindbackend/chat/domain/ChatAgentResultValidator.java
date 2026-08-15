@@ -19,6 +19,15 @@ public class ChatAgentResultValidator {
 
     private static final int MAX_ANSWER_LENGTH = 4000;
     private static final int MAX_SOURCES = 10;
+    private static final int MAX_SUGGESTIONS = 3;
+    private static final int MAX_SUGGESTION_LENGTH = 200;
+    private static final Set<String> ALLOWED_DESTINATIONS = Set.of(
+            "INVENTORY",
+            "SHOPPING_LISTS",
+            "SAVED_RECIPES",
+            "COOKING_PLANS",
+            "RECOMMENDATIONS",
+            "EXPLORE");
 
     public ValidatedChatAgentResult validate(
             UUID requestId,
@@ -45,6 +54,14 @@ public class ChatAgentResultValidator {
         if (result.sources().size() > MAX_SOURCES) {
             throw new ChatAgentValidationException("Agent source list is oversized.");
         }
+        List<String> suggestedQuestions = validateSuggestions(
+                result.suggestedQuestions(),
+                "question",
+                null);
+        List<String> suggestedDestinations = validateSuggestions(
+                result.suggestedDestinations(),
+                "destination",
+                ALLOWED_DESTINATIONS);
         if (result.route() == ChatRoute.OUT_OF_SCOPE) {
             if (result.responseStatus() != ChatResponseStatus.UNSUPPORTED) {
                 throw new ChatAgentValidationException("Out-of-scope answers must use unsupported status.");
@@ -55,7 +72,9 @@ public class ChatAgentResultValidator {
                     result.route(),
                     result.responseStatus(),
                     answer,
-                    List.of());
+                    List.of(),
+                    suggestedQuestions,
+                    suggestedDestinations);
         }
         if (result.responseStatus() != ChatResponseStatus.SUCCEEDED
                 && result.responseStatus() != ChatResponseStatus.FALLBACK_SUCCEEDED) {
@@ -81,7 +100,34 @@ public class ChatAgentResultValidator {
                 result.route(),
                 result.responseStatus(),
                 answer,
-                result.sources());
+                result.sources(),
+                suggestedQuestions,
+                suggestedDestinations);
+    }
+
+    private List<String> validateSuggestions(
+            List<String> values,
+            String label,
+            Set<String> allowedValues) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        if (values.size() > MAX_SUGGESTIONS) {
+            throw new ChatAgentValidationException("Agent " + label + " suggestions are oversized.");
+        }
+        List<String> normalised = values.stream()
+                .map(value -> value == null ? "" : value.trim())
+                .toList();
+        if (normalised.stream().anyMatch(value -> value.isBlank() || value.length() > MAX_SUGGESTION_LENGTH)) {
+            throw new ChatAgentValidationException("Agent " + label + " suggestion is invalid.");
+        }
+        if (normalised.stream().distinct().count() != normalised.size()) {
+            throw new ChatAgentValidationException("Agent " + label + " suggestions contain duplicates.");
+        }
+        if (allowedValues != null && !allowedValues.containsAll(normalised)) {
+            throw new ChatAgentValidationException("Agent returned an unsupported destination.");
+        }
+        return List.copyOf(normalised);
     }
 
     public static class ChatAgentValidationException extends RuntimeException {
