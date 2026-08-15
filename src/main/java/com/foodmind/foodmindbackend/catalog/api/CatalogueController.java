@@ -4,8 +4,13 @@ import com.foodmind.foodmindbackend.catalog.api.response.CatalogueMealResponse;
 import com.foodmind.foodmindbackend.catalog.api.response.CataloguePlaceResponse;
 import com.foodmind.foodmindbackend.catalog.api.response.CatalogueProductResponse;
 import com.foodmind.foodmindbackend.catalog.api.response.CatalogueReferenceDataResponse;
+import com.foodmind.foodmindbackend.catalog.api.response.WalkingRouteResponse;
 import com.foodmind.foodmindbackend.catalog.application.CatalogueService;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import java.math.BigDecimal;
 import java.util.UUID;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/catalogue")
+@Validated
 public class CatalogueController {
 
     private final CatalogueService catalogueService;
@@ -41,6 +47,14 @@ public class CatalogueController {
     @GetMapping("/places/{id}")
     CataloguePlaceResponse place(@PathVariable UUID id) {
         return CataloguePlaceResponse.from(catalogueService.place(id));
+    }
+
+    @GetMapping("/places/{id}/walking-route")
+    WalkingRouteResponse walkingRoute(
+            @PathVariable UUID id,
+            @DecimalMin(value = "-90") @DecimalMax(value = "90") @org.springframework.web.bind.annotation.RequestParam BigDecimal originLatitude,
+            @DecimalMin(value = "-180") @DecimalMax(value = "180") @org.springframework.web.bind.annotation.RequestParam BigDecimal originLongitude) {
+        return WalkingRouteResponse.from(catalogueService.walkingRoute(id, originLatitude, originLongitude));
     }
 
     @GetMapping("/products/{id}")
