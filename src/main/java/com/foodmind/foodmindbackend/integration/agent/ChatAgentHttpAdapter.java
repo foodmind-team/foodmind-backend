@@ -112,7 +112,9 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                 ChatRoute.valueOf(response.route()),
                 ChatResponseStatus.valueOf(response.responseStatus()),
                 response.answer(),
-                sources(response.sources()));
+                sources(response.sources()),
+                response.suggestedQuestions(),
+                response.suggestedDestinations());
     }
 
     private List<ChatAgentSourceResult> sources(List<AgentChatSourceResponse> sources) {
@@ -143,9 +145,14 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                     "chat-fallback",
                     ChatRoute.NAVIGATION,
                     ChatResponseStatus.FALLBACK_SUCCEEDED,
-                    "I can help with read-only questions and FoodMind navigation. "
-                            + "I never execute recommendation or cooking actions; open their dedicated workflows to do that.",
-                    List.of());
+                    "I can help with read-only FoodMind and food-related questions. "
+                            + "Tell me whether you want to search your records, understand food information, or open a workflow.",
+                    List.of(),
+                    List.of(
+                            "Search my recent FoodMind records.",
+                            "Help me understand a food or nutrition question.",
+                            "Where can I plan what to cook?"),
+                    List.of("EXPLORE", "COOKING_PLANS", "INVENTORY"));
         }
         return ChatAgentGenerationResult.success(
                 command.contractVersion(),
@@ -158,7 +165,9 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                 ChatResponseStatus.FALLBACK_SUCCEEDED,
                 "Here is a grounded summary of the shared FoodMind references: "
                         + available.stream().map(ChatReference::title).toList(),
-                fallbackSources(available));
+                fallbackSources(available),
+                List.of("Compare these sources.", "What should I notice in these sources?"),
+                List.of());
     }
 
     private List<ChatAgentSourceResult> fallbackSources(List<ChatReference> references) {
@@ -172,7 +181,10 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                 .toList();
     }
 
-    private ChatAgentGenerationResult failure(ChatAgentCommand command, ChatAgentFailureCode failureCode, String agentTraceId) {
+    private ChatAgentGenerationResult failure(
+            ChatAgentCommand command,
+            ChatAgentFailureCode failureCode,
+            String agentTraceId) {
         return ChatAgentGenerationResult.failure(
                 failureCode,
                 command.contractVersion(),

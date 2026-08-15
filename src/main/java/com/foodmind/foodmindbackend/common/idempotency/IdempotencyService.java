@@ -42,10 +42,24 @@ public class IdempotencyService {
 
     @Transactional
     public IdempotencyRecord begin(UUID userId, String operation, String idempotencyKey, String requestHash) {
+        return beginAttempt(userId, operation, idempotencyKey, requestHash).record();
+    }
+
+    /**
+     * Starts an operation, replays a completed record, or acquires a stale in-progress record.
+     * A fresh caller owns the operation immediately. A second caller must wait unless the
+     * previous owner has been inactive for longer than the maximum agent request window.
+     */
+    @Transactional
+    public IdempotencyAttempt beginAttempt(
+            UUID userId,
+            String operation,
+            String idempotencyKey,
+            String requestHash) {
         String safeKey = validateKey(idempotencyKey);
         UUID id = UUID.randomUUID();
         OffsetDateTime expiresAt = OffsetDateTime.now().plusDays(1);
-        jdbcTemplate.update("""
+        int inserted = jdbcTemplate.update("""
                 INSERT INTO idempotency_record (
                     id, user_id, operation, idempotency_key, request_hash, state, expires_at
                 )
@@ -84,7 +98,42 @@ public class IdempotencyService {
         if (!record.requestHash().equals(requestHash)) {
             throw new ApiException(ErrorCode.IDEMPOTENCY_CONFLICT);
         }
-        return record;
+        if (inserted == 1) {
+            return new IdempotencyAttempt(record, true);
+        }
+        if (!"IN_PROGRESS".equals(record.state())) {
+            return new IdempotencyAttempt(record, false);
+        }
+
+        int claimed = jdbcTemplate.update("""
+                UPDATE idempotency_record
+                SET version = version + 1
+                WHERE id = :recordId
+                  AND state = 'IN_PROGRESS'
+                  AND updated_at <= CURRENT_TIMESTAMP - INTERVAL '3 minutes'
+                """,
+                new MapSqlParameterSource("recordId", record.id()));
+        return new IdempotencyAttempt(record, claimed == 1);
+    }
+
+    @Transactional
+    public void associateResource(UUID recordId, UUID resourceId) {
+        int updated = jdbcTemplate.update("""
+                UPDATE idempotency_record
+                SET resource_id = :resourceId,
+                    version = version + 1
+                WHERE id = :recordId
+                  AND state = 'IN_PROGRESS'
+                  AND resource_id IS NULL
+                """,
+                new MapSqlParameterSource()
+                        .addValue("recordId", recordId)
+                        .addValue("resourceId", resourceId));
+        if (updated == 0) {
+            throw new ApiException(
+                    ErrorCode.CONFLICT,
+                    "The idempotent request is already being processed.");
+        }
     }
 
     @Transactional

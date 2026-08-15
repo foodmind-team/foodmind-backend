@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -45,6 +46,7 @@ public class ChatMessageController {
     public ChatMessageResponse post(
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @PathVariable UUID sessionId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody PostChatMessageRequest request) {
         return ChatMessageResponse.from(chatMessageService.post(
                 principal.id(),
@@ -52,7 +54,8 @@ public class ChatMessageController {
                 request.content(),
                 request.referenceIds(),
                 request.useSessionReferences(),
-                request.route()));
+                request.route(),
+                idempotencyKey));
     }
 
     @GetMapping

@@ -18,5 +18,9 @@
         "claim": "meal_name"
       }
     }
-  ]
+  ],
+  "suggestedQuestions": [
+    "What else should I notice?"
+  ],
+  "suggestedDestinations": []
 }

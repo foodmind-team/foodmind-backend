@@ -8,6 +8,12 @@
   "agentTraceId": "agent-chat-003",
   "route": "OUT_OF_SCOPE",
   "responseStatus": "UNSUPPORTED",
-  "answer": "Chat supports search, summary, comparison, and navigation over authorised FoodMind sources.",
-  "sources": []
+  "answer": "That request is outside FoodMind Chat's food and FoodMind scope.",
+  "sources": [],
+  "suggestedQuestions": [
+    "Ask a food or nutrition question."
+  ],
+  "suggestedDestinations": [
+    "EXPLORE"
+  ]
 }
