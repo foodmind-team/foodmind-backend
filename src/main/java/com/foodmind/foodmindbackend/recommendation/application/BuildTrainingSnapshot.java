@@ -67,6 +67,7 @@ public class BuildTrainingSnapshot {
                 source.laterRatingCreatedAt(),
                 source.wouldEatAgain(),
                 source.wouldEatAgainCreatedAt(),
+                collaborativeStrength(source),
                 features,
                 source.featureSchemaVersion(),
                 source.candidateRank(),
@@ -75,6 +76,22 @@ public class BuildTrainingSnapshot {
                 source.modelStatus(),
                 source.fallbackVersion(),
                 source.fallbackStatus());
+    }
+
+    /**
+     * A privacy-preserving, positive-only interaction signal for the offline
+     * collaborative-filtering job. Rejections and passive impressions must
+     * never be converted into implicit negative interactions.
+     */
+    private double collaborativeStrength(TrainingSnapshotSourceRow source) {
+        double strength = source.explicitLabel() == 1 ? 1.0 : 0.0;
+        if (source.laterRating() != null && source.laterRating().compareTo(java.math.BigDecimal.valueOf(4)) >= 0) {
+            strength = Math.max(strength, source.laterRating().doubleValue() / 5.0);
+        }
+        if (Boolean.TRUE.equals(source.wouldEatAgain())) {
+            strength = Math.max(strength, 1.0);
+        }
+        return Math.min(1.0, strength);
     }
 
     @SuppressWarnings("unchecked")

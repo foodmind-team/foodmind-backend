@@ -17,6 +17,7 @@ public enum RecommendationRejectionReason {
     ALLERGEN_CONCERN(Duration.ofDays(30)),
     RECENTLY_EATEN(Duration.ofDays(14)),
     PLACE_CONCERN(Duration.ofDays(14)),
+    DO_NOT_RECOMMEND(null),
     OTHER(null);
 
     private final Duration temporaryConstraintDuration;

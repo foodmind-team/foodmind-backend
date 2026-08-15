@@ -126,11 +126,14 @@ class TrainingSnapshotExportTest extends PostgreSqlContainerSupport {
         assertThat(rows).contains("\"explicitLabel\":1");
         assertThat(rows).contains("\"laterRating\":4.5");
         assertThat(rows).contains("\"wouldEatAgain\":true");
+        assertThat(rows).contains("\"collaborativeStrength\":1.0");
         assertThat(rows).doesNotContain(userId, sessionId, candidateId, passiveCandidateId, mealId, placeMealId);
         assertThat(rows).doesNotContain("email", "comment", "rawFeatureSnapshot", "rawMealId", "rawOfferingId");
         assertThat(JsonPath.<Integer>read(manifest, "$.rowCount")).isEqualTo(1);
         assertThat(JsonPath.<String>read(manifest, "$.contentChecksum")).isEqualTo(result.contentChecksum());
         assertThat(JsonPath.<String>read(manifest, "$.backendCommit")).isEqualTo("test-commit");
+        assertThat(JsonPath.<String>read(manifest, "$.exportSchemaVersion"))
+                .isEqualTo("foodmind-training-snapshot-v2");
     }
 
     @Test
@@ -203,7 +206,9 @@ class TrainingSnapshotExportTest extends PostgreSqlContainerSupport {
         assertThat(result.rowCount()).isEqualTo(1);
         assertThat(result.lrFeatureRowCount()).isZero();
         assertThat(result.collaborativeOnlyRowCount()).isEqualTo(1);
-        assertThat(Files.readString(result.rowsPath())).contains("\"features\":null");
+        assertThat(Files.readString(result.rowsPath()))
+                .contains("\"features\":null")
+                .contains("\"collaborativeStrength\":0.0");
     }
 
     private Map<String, Object> validFeatures() {

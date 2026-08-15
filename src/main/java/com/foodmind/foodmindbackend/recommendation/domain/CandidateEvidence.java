@@ -17,6 +17,7 @@ public record CandidateEvidence(
         UUID mealId,
         String mealName,
         String mealType,
+        String categoryCode,
         String cuisineCode,
         UUID placeId,
         String placeName,
@@ -29,6 +30,7 @@ public record CandidateEvidence(
         CleanlinessEvidence cleanliness,
         List<String> dietaryTagCodes,
         List<String> allergenCodes,
+        boolean allergenEvidenceComplete,
         boolean wantToTry,
         int personalRecordCount,
         BigDecimal personalAverageRating,
@@ -64,8 +66,9 @@ public record CandidateEvidence(
             int personalRecordCount, BigDecimal personalAverageRating, OffsetDateTime lastPersonalRecordAt,
             int groupRecordCount, BigDecimal groupAverageRating, OffsetDateTime lastGroupRecordAt,
             BigDecimal distanceKm) {
-        this(placeMealId, mealId, mealName, mealType, cuisineCode, placeId, placeName, area, latitude,
-                longitude, price, spiceLevel, available, cleanliness, dietaryTagCodes, allergenCodes, wantToTry,
+        this(placeMealId, mealId, mealName, mealType, mealType, cuisineCode, placeId, placeName, area, latitude,
+                longitude, price, spiceLevel, available, cleanliness, dietaryTagCodes, allergenCodes, true,
+                wantToTry,
                 personalRecordCount, personalAverageRating, lastPersonalRecordAt, groupRecordCount,
                 groupAverageRating, lastGroupRecordAt, distanceKm, CandidateSourceType.PLACE_MEAL, null, null,
                 null, false);

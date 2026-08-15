@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -143,6 +144,63 @@ class RecommendationFeedbackControllerTest extends PostgreSqlContainerSupport {
                 "SELECT count(*) FROM recommendation_feedback",
                 Integer.class);
         assertThat(feedbackRows).isEqualTo(2);
+    }
+
+    @Test
+    void doNotRecommendExcludesTheOfferingFromFutureSessionsOnlyForTheOwner() throws Exception {
+        String primaryToken = read(register("feedback-never-primary@example.test", "Never Primary"), "$.accessToken");
+        String secondaryToken = read(register("feedback-never-secondary@example.test", "Never Secondary"), "$.accessToken");
+        MvcResult parent = generate(primaryToken, "feedback-never-parent-key");
+        String parentSessionId = read(parent, "$.sessionId");
+        String candidateId = read(parent, "$.items[0].candidateId");
+        Map<String, Object> target = jdbcTemplate.queryForMap("""
+                SELECT offering.meal_id::text AS meal_id, offering.place_id::text AS place_id
+                FROM recommendation_candidate candidate
+                JOIN place_meal offering ON offering.id = candidate.place_meal_id
+                WHERE candidate.id = ?::uuid
+                """, candidateId);
+
+        mockMvc.perform(post("/api/v1/recommendations/{sessionId}/feedback", parentSessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primaryToken))
+                        .header("Idempotency-Key", "feedback-never-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "candidateId": "%s",
+                                  "eventType": "REJECTED",
+                                  "reasonCode": "DO_NOT_RECOMMEND"
+                                }
+                                """.formatted(candidateId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.supervisedLabel").value(0))
+                .andExpect(jsonPath("$.effectiveUntil").doesNotExist());
+
+        String nextSessionId = read(generate(primaryToken, "feedback-never-next-key"), "$.sessionId");
+        Integer ownerCandidates = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM recommendation_candidate candidate
+                JOIN place_meal offering ON offering.id = candidate.place_meal_id
+                WHERE candidate.session_id = ?::uuid
+                  AND offering.meal_id = ?::uuid
+                  AND offering.place_id = ?::uuid
+                """, Integer.class, nextSessionId, target.get("meal_id"), target.get("place_id"));
+        assertThat(ownerCandidates).isZero();
+
+        String secondarySessionId = read(generate(secondaryToken, "feedback-never-secondary-generate-key"), "$.sessionId");
+        Integer otherUserCandidates = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM recommendation_candidate candidate
+                JOIN place_meal offering ON offering.id = candidate.place_meal_id
+                WHERE candidate.session_id = ?::uuid
+                  AND offering.meal_id = ?::uuid
+                  AND offering.place_id = ?::uuid
+                """, Integer.class, secondarySessionId, target.get("meal_id"), target.get("place_id"));
+        assertThat(otherUserCandidates).isOne();
+
+        mockMvc.perform(get("/api/v1/recommendations/{sessionId}", parentSessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primaryToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].candidateId").value(candidateId));
     }
 
     private MvcResult generate(String accessToken, String key) throws Exception {
