@@ -20,6 +20,7 @@ public record TrainingSnapshotOutputRow(
         OffsetDateTime laterRatingCreatedAt,
         Boolean wouldEatAgain,
         OffsetDateTime wouldEatAgainCreatedAt,
+        double collaborativeStrength,
         Object features,
         String featureSchemaVersion,
         Integer candidateRank,

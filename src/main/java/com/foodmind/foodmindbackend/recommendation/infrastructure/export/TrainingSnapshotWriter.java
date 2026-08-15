@@ -73,7 +73,7 @@ public class TrainingSnapshotWriter {
             int collaborativeRows) {
         Map<String, Object> manifest = new LinkedHashMap<>();
         manifest.put("backendCommit", request.backendCommit() == null ? "unknown" : request.backendCommit());
-        manifest.put("exportSchemaVersion", "foodmind-training-snapshot-v1");
+        manifest.put("exportSchemaVersion", "foodmind-training-snapshot-v2");
         manifest.put("featureSchemaVersion", schemaRegistry.featureSchemaVersion());
         manifest.put("featureAllowListVersion", schemaRegistry.featureAllowListVersion());
         manifest.put("featureAllowListChecksum", featureAllowListChecksum);
@@ -84,6 +84,11 @@ public class TrainingSnapshotWriter {
         manifest.put("rowCount", rows.size());
         manifest.put("lrFeatureRowCount", lrRows);
         manifest.put("collaborativeOnlyRowCount", collaborativeRows);
+        manifest.put("collaborativeSignal", Map.of(
+                "name", "collaborativeStrength",
+                "positiveOnly", true,
+                "range", "[0,1]",
+                "rejectionsIncluded", false));
         manifest.put("contentChecksum", checksum);
         manifest.put("provenance", request.provenance() == null ? "synthetic" : request.provenance());
         manifest.put("laterSignalTimestamps", rows.stream()
