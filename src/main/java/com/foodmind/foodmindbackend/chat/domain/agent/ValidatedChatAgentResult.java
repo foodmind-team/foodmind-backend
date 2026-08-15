@@ -17,5 +17,25 @@ public record ValidatedChatAgentResult(
         ChatRoute route,
         ChatResponseStatus responseStatus,
         String answer,
-        List<ChatAgentSourceResult> sources) {
+        List<ChatAgentSourceResult> sources,
+        List<String> suggestedQuestions,
+        List<String> suggestedDestinations) {
+
+    public ValidatedChatAgentResult(
+            String agentContractVersion,
+            String agentTraceId,
+            ChatRoute route,
+            ChatResponseStatus responseStatus,
+            String answer,
+            List<ChatAgentSourceResult> sources) {
+        this(
+                agentContractVersion,
+                agentTraceId,
+                route,
+                responseStatus,
+                answer,
+                sources,
+                List.of(),
+                List.of());
+    }
 }

@@ -23,7 +23,8 @@ public record AgentChatRequest(
         String message,
         ChatRoute requestedRoute,
         String delegationToken,
-        List<AgentChatReferenceRequest> sharedReferences) {
+        List<AgentChatReferenceRequest> sharedReferences,
+        List<AgentChatTurnRequest> recentTurns) {
 
     public static AgentChatRequest from(ChatAgentCommand command) {
         return new AgentChatRequest(
@@ -36,6 +37,7 @@ public record AgentChatRequest(
                 command.message(),
                 command.requestedRoute(),
                 command.delegationToken(),
-                command.sharedReferences().stream().map(AgentChatReferenceRequest::from).toList());
+                command.sharedReferences().stream().map(AgentChatReferenceRequest::from).toList(),
+                command.recentTurns().stream().map(AgentChatTurnRequest::from).toList());
     }
 }

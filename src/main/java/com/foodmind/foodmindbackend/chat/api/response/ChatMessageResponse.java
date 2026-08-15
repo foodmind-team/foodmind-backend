@@ -22,7 +22,9 @@ public record ChatMessageResponse(
         UUID correlationId,
         String agentTraceId,
         OffsetDateTime createdAt,
-        List<ChatMessageSourceResponse> sources) {
+        List<ChatMessageSourceResponse> sources,
+        List<String> suggestedQuestions,
+        List<String> suggestedDestinations) {
 
     public static ChatMessageResponse from(ChatMessage message) {
         return new ChatMessageResponse(
@@ -35,6 +37,8 @@ public record ChatMessageResponse(
                 message.correlationId(),
                 message.agentTraceId(),
                 message.createdAt(),
-                message.sources().stream().map(ChatMessageSourceResponse::from).toList());
+                message.sources().stream().map(ChatMessageSourceResponse::from).toList(),
+                message.suggestedQuestions(),
+                message.suggestedDestinations());
     }
 }

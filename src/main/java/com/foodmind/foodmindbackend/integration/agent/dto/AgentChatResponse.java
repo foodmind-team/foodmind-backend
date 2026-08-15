@@ -21,5 +21,7 @@ public record AgentChatResponse(
         String route,
         String responseStatus,
         String answer,
-        List<AgentChatSourceResponse> sources) {
+        List<AgentChatSourceResponse> sources,
+        List<String> suggestedQuestions,
+        List<String> suggestedDestinations) {
 }
