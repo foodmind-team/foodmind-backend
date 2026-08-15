@@ -4,6 +4,7 @@ import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
+import com.foodmind.foodmindbackend.media.application.MediaReadUrlService;
 import com.foodmind.foodmindbackend.record.api.request.CreateFoodRecordRequest;
 import com.foodmind.foodmindbackend.record.api.request.UpdateFoodRecordRequest;
 import com.foodmind.foodmindbackend.record.api.response.FoodRecordResponse;
@@ -59,18 +60,21 @@ public class FoodRecordController {
     private final ListFoodRecords listFoodRecords;
     private final UpdateFoodRecord updateFoodRecord;
     private final DeleteFoodRecord deleteFoodRecord;
+    private final MediaReadUrlService mediaReadUrlService;
 
     public FoodRecordController(
             CreateFoodRecord createFoodRecord,
             GetFoodRecord getFoodRecord,
             ListFoodRecords listFoodRecords,
             UpdateFoodRecord updateFoodRecord,
-            DeleteFoodRecord deleteFoodRecord) {
+            DeleteFoodRecord deleteFoodRecord,
+            MediaReadUrlService mediaReadUrlService) {
         this.createFoodRecord = createFoodRecord;
         this.getFoodRecord = getFoodRecord;
         this.listFoodRecords = listFoodRecords;
         this.updateFoodRecord = updateFoodRecord;
         this.deleteFoodRecord = deleteFoodRecord;
+        this.mediaReadUrlService = mediaReadUrlService;
     }
 
     @PostMapping
@@ -80,7 +84,7 @@ public class FoodRecordController {
         FoodRecord record = createFoodRecord.create(principal.id(), request.toCommand());
         return ResponseEntity.created(URI.create("/api/v1/food-records/" + record.id()))
                 .eTag(etag(record.version()))
-                .body(FoodRecordResponse.from(record));
+                .body(response(record));
     }
 
     @GetMapping("/{id}")
@@ -90,7 +94,7 @@ public class FoodRecordController {
         FoodRecord record = getFoodRecord.get(principal.id(), id);
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(FoodRecordResponse.from(record));
+                .body(response(record));
     }
 
     @GetMapping
@@ -121,7 +125,7 @@ public class FoodRecordController {
                 sort,
                 page,
                 size));
-        return PageResponse.of(result.items().stream().map(FoodRecordResponse::from).toList(), page, size, result.totalItems());
+        return PageResponse.of(result.items().stream().map(this::response).toList(), page, size, result.totalItems());
     }
 
     @PatchMapping("/{id}")
@@ -133,7 +137,7 @@ public class FoodRecordController {
         FoodRecord record = updateFoodRecord.update(principal.id(), id, expectedVersion(ifMatch), request.toCommand());
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(FoodRecordResponse.from(record));
+                .body(response(record));
     }
 
     @DeleteMapping("/{id}")
@@ -142,6 +146,10 @@ public class FoodRecordController {
             @PathVariable UUID id) {
         deleteFoodRecord.delete(principal.id(), id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
+    private FoodRecordResponse response(FoodRecord record) {
+        return FoodRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()));
     }
 
     private String etag(long version) {

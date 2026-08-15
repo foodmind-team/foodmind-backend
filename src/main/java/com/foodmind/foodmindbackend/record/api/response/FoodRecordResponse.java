@@ -30,11 +30,16 @@ public record FoodRecordResponse(
         FoodRecordVisibility visibility,
         UUID groupId,
         UUID mediaAssetId,
+        String imageUrl,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         Long version) {
 
     public static FoodRecordResponse from(FoodRecord record) {
+        return from(record, null);
+    }
+
+    public static FoodRecordResponse from(FoodRecord record, String imageUrl) {
         return new FoodRecordResponse(
                 record.id(),
                 record.mealId(),
@@ -52,6 +57,7 @@ public record FoodRecordResponse(
                 record.visibility(),
                 record.groupId(),
                 record.mediaAssetId(),
+                imageUrl,
                 record.createdAt(),
                 record.updatedAt(),
                 record.version());

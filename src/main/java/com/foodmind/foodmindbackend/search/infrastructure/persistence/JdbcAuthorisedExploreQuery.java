@@ -38,18 +38,22 @@ public class JdbcAuthorisedExploreQuery implements AuthorisedExploreQuery {
     public ExplorePage explore(UUID actorUserId, Set<SearchSourceType> sourceTypes, int pageSize, ExploreCursor after) {
         List<SearchDocument> rows = jdbcTemplate.query(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
-                    SELECT *
+                    SELECT page.*,
+                           public.foodmind_media_object_key_for_user(
+                               ?, page.source_type, page.source_id
+                           ) AS image_object_key
                     FROM public.foodmind_explore_documents_for_user(
                         ?, ?::varchar(20)[], ?, ?, ?, ?
-                    )
+                    ) AS page
                     """);
             Array sourceTypeArray = connection.createArrayOf("varchar", sourceTypes(sourceTypes));
             statement.setObject(1, actorUserId);
-            statement.setArray(2, sourceTypeArray);
-            statement.setInt(3, pageSize);
-            statement.setObject(4, after == null ? null : after.sortAt());
-            statement.setString(5, after == null ? null : after.sourceType().name());
-            statement.setObject(6, after == null ? null : after.sourceId());
+            statement.setObject(2, actorUserId);
+            statement.setArray(3, sourceTypeArray);
+            statement.setInt(4, pageSize);
+            statement.setObject(5, after == null ? null : after.sortAt());
+            statement.setString(6, after == null ? null : after.sourceType().name());
+            statement.setObject(7, after == null ? null : after.sourceId());
             return statement;
         }, this::exploreRow);
         List<SearchDocument> items = pageItems(rows, pageSize);
@@ -85,7 +89,7 @@ public class JdbcAuthorisedExploreQuery implements AuthorisedExploreQuery {
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("body_excerpt"),
-                null,
+                rs.getString("image_object_key"),
                 rs.getObject("occurred_at", OffsetDateTime.class),
                 rs.getObject("sort_at", OffsetDateTime.class),
                 null);

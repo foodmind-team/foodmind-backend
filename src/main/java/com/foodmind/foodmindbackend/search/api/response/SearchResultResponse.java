@@ -25,14 +25,14 @@ public record SearchResultResponse(
         UUID groupId,
         OffsetDateTime occurredAt) {
 
-    public static SearchResultResponse from(SearchDocument document) {
+    public static SearchResultResponse from(SearchDocument document, String imageReference) {
         return new SearchResultResponse(
                 document.sourceType().name(),
                 document.sourceId(),
                 document.title(),
                 document.subtitle(),
                 document.snippet(),
-                document.imageReference(),
+                imageReference,
                 document.relevance(),
                 document.visibility(),
                 document.ownerUserId(),

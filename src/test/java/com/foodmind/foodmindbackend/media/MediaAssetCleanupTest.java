@@ -57,6 +57,7 @@ class MediaAssetCleanupTest {
         private FakeRepository(MediaAsset pending) { this.pending = pending; }
         @Override public void savePending(MediaAsset asset) { }
         @Override public Optional<MediaAsset> findOwned(UUID owner, UUID id) { return Optional.empty(); }
+        @Override public Optional<MediaAsset> findReady(UUID id) { return Optional.empty(); }
         @Override public boolean markReady(UUID owner, UUID id, OffsetDateTime at) { return false; }
         @Override public Optional<MediaAsset> softDelete(UUID owner, UUID id, OffsetDateTime at) {
             softDeleted.add(id);

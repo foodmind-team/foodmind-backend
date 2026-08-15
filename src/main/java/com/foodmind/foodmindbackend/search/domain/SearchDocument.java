@@ -20,7 +20,7 @@ public record SearchDocument(
         String title,
         String subtitle,
         String snippet,
-        String imageReference,
+        String imageObjectKey,
         OffsetDateTime occurredAt,
         OffsetDateTime sortAt,
         BigDecimal relevance) {

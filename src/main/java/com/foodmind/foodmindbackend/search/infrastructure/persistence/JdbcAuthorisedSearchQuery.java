@@ -39,20 +39,24 @@ public class JdbcAuthorisedSearchQuery implements AuthorisedSearchQuery {
     public SearchPage search(UUID actorUserId, String query, Set<SearchSourceType> sourceTypes, int pageSize, SearchCursor after) {
         List<SearchDocument> rows = jdbcTemplate.query(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
-                    SELECT *
+                    SELECT page.*,
+                           public.foodmind_media_object_key_for_user(
+                               ?, page.source_type, page.source_id
+                           ) AS image_object_key
                     FROM public.foodmind_search_documents_for_user(
                         ?, ?, ?::varchar(20)[], ?, ?, ?, ?, ?
-                    )
+                    ) AS page
                     """);
             Array sourceTypeArray = connection.createArrayOf("varchar", sourceTypes(sourceTypes));
             statement.setObject(1, actorUserId);
-            statement.setString(2, query);
-            statement.setArray(3, sourceTypeArray);
-            statement.setInt(4, pageSize);
-            statement.setBigDecimal(5, after == null ? null : after.relevance());
-            statement.setObject(6, after == null ? null : after.sortAt());
-            statement.setString(7, after == null ? null : after.sourceType().name());
-            statement.setObject(8, after == null ? null : after.sourceId());
+            statement.setObject(2, actorUserId);
+            statement.setString(3, query);
+            statement.setArray(4, sourceTypeArray);
+            statement.setInt(5, pageSize);
+            statement.setBigDecimal(6, after == null ? null : after.relevance());
+            statement.setObject(7, after == null ? null : after.sortAt());
+            statement.setString(8, after == null ? null : after.sourceType().name());
+            statement.setObject(9, after == null ? null : after.sourceId());
             return statement;
         }, this::searchRow);
         List<SearchDocument> items = pageItems(rows, pageSize);
@@ -88,7 +92,7 @@ public class JdbcAuthorisedSearchQuery implements AuthorisedSearchQuery {
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("body_excerpt"),
-                null,
+                rs.getString("image_object_key"),
                 rs.getObject("occurred_at", OffsetDateTime.class),
                 rs.getObject("sort_at", OffsetDateTime.class),
                 rs.getBigDecimal("relevance"));

@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.media.infrastructure.storage;
 
 import com.foodmind.foodmindbackend.media.application.port.ObjectStoragePort;
+import com.foodmind.foodmindbackend.media.application.port.MediaReadUrlPort;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
@@ -10,6 +11,9 @@ import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -27,7 +31,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 @Component
 @ConditionalOnProperty(prefix = "foodmind.media.storage", name = "enabled", havingValue = "true")
-public class S3ObjectStorageAdapter implements ObjectStoragePort {
+public class S3ObjectStorageAdapter implements ObjectStoragePort, MediaReadUrlPort {
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
@@ -49,7 +53,6 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
                     .signatureDuration(properties.getUploadTtl()).putObjectRequest(request).build());
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Content-Type", contentType);
-            headers.put("Content-Length", Long.toString(byteSize));
             headers.put("x-amz-checksum-sha256", checksumBase64);
             return new UploadInstruction(signed.url().toExternalForm(), headers,
                     OffsetDateTime.ofInstant(signed.expiration(), ZoneOffset.UTC));
@@ -61,7 +64,8 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
     @Override
     public ObjectMetadata headObject(String objectKey) {
         try {
-            var object = s3Client.headObject(HeadObjectRequest.builder().bucket(properties.getBucket()).key(objectKey).build());
+            var object = s3Client.headObject(HeadObjectRequest.builder()
+                    .bucket(properties.getBucket()).key(objectKey).checksumMode(ChecksumMode.ENABLED).build());
             String checksum = object.checksumSHA256() == null ? null
                     : HexFormat.of().formatHex(Base64.getDecoder().decode(object.checksumSHA256()));
             return new ObjectMetadata(object.contentType(), object.contentLength(), checksum);
@@ -70,6 +74,24 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
                 throw new ObjectMissingException();
             }
             throw new ObjectStorageUnavailableException(exception);
+        } catch (RuntimeException exception) {
+            throw new ObjectStorageUnavailableException(exception);
+        }
+    }
+
+    @Override
+    public String createReadUrl(String objectKey) {
+        try {
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(objectKey)
+                    .responseContentDisposition("inline")
+                    .build();
+            return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                            .signatureDuration(properties.getReadTtl())
+                            .getObjectRequest(request)
+                            .build())
+                    .url().toExternalForm();
         } catch (RuntimeException exception) {
             throw new ObjectStorageUnavailableException(exception);
         }

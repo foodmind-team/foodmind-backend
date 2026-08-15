@@ -3,6 +3,7 @@ package com.foodmind.foodmindbackend.search.api;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
+import com.foodmind.foodmindbackend.media.application.MediaReadUrlService;
 import com.foodmind.foodmindbackend.search.api.response.SearchPageResponse;
 import com.foodmind.foodmindbackend.search.application.SearchPlatformContent;
 import com.foodmind.foodmindbackend.search.domain.SearchCursor;
@@ -33,9 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class SearchController {
 
     private final SearchPlatformContent searchPlatformContent;
+    private final MediaReadUrlService mediaReadUrlService;
 
-    public SearchController(SearchPlatformContent searchPlatformContent) {
+    public SearchController(SearchPlatformContent searchPlatformContent, MediaReadUrlService mediaReadUrlService) {
         this.searchPlatformContent = searchPlatformContent;
+        this.mediaReadUrlService = mediaReadUrlService;
     }
 
     @GetMapping
@@ -52,7 +55,7 @@ public class SearchController {
                 query,
                 parseTypes(types),
                 size,
-                SearchCursor.after(after)));
+                SearchCursor.after(after)), mediaReadUrlService::forAuthorisedObjectKey);
     }
 
     private void rejectOffsetPage(int page) {

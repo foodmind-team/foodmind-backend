@@ -24,14 +24,14 @@ public record ExploreResultResponse(
         UUID groupId,
         OffsetDateTime occurredAt) {
 
-    public static ExploreResultResponse from(SearchDocument document) {
+    public static ExploreResultResponse from(SearchDocument document, String imageReference) {
         return new ExploreResultResponse(
                 exploreSourceType(document),
                 document.sourceId(),
                 document.title(),
                 document.subtitle(),
                 document.snippet(),
-                document.imageReference(),
+                imageReference,
                 document.visibility(),
                 document.ownerUserId(),
                 document.groupId(),

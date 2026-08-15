@@ -4,6 +4,7 @@ import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
+import com.foodmind.foodmindbackend.media.application.MediaReadUrlService;
 import com.foodmind.foodmindbackend.record.api.request.CreateDrinkRecordRequest;
 import com.foodmind.foodmindbackend.record.api.request.UpdateDrinkRecordRequest;
 import com.foodmind.foodmindbackend.record.api.response.DrinkRecordResponse;
@@ -59,18 +60,21 @@ public class DrinkRecordController {
     private final ListDrinkRecords listDrinkRecords;
     private final UpdateDrinkRecord updateDrinkRecord;
     private final DeleteDrinkRecord deleteDrinkRecord;
+    private final MediaReadUrlService mediaReadUrlService;
 
     public DrinkRecordController(
             CreateDrinkRecord createDrinkRecord,
             GetDrinkRecord getDrinkRecord,
             ListDrinkRecords listDrinkRecords,
             UpdateDrinkRecord updateDrinkRecord,
-            DeleteDrinkRecord deleteDrinkRecord) {
+            DeleteDrinkRecord deleteDrinkRecord,
+            MediaReadUrlService mediaReadUrlService) {
         this.createDrinkRecord = createDrinkRecord;
         this.getDrinkRecord = getDrinkRecord;
         this.listDrinkRecords = listDrinkRecords;
         this.updateDrinkRecord = updateDrinkRecord;
         this.deleteDrinkRecord = deleteDrinkRecord;
+        this.mediaReadUrlService = mediaReadUrlService;
     }
 
     @PostMapping
@@ -80,7 +84,7 @@ public class DrinkRecordController {
         DrinkRecord record = createDrinkRecord.handle(principal.id(), request.toCommand());
         return ResponseEntity.created(URI.create("/api/v1/drink-records/" + record.id()))
                 .eTag(etag(record.version()))
-                .body(DrinkRecordResponse.from(record));
+                .body(response(record));
     }
 
     @GetMapping("/{id}")
@@ -90,7 +94,7 @@ public class DrinkRecordController {
         DrinkRecord record = getDrinkRecord.handle(principal.id(), id);
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(DrinkRecordResponse.from(record));
+                .body(response(record));
     }
 
     @GetMapping
@@ -117,7 +121,7 @@ public class DrinkRecordController {
                 sort,
                 page,
                 size));
-        return PageResponse.of(result.items().stream().map(DrinkRecordResponse::from).toList(), page, size, result.totalItems());
+        return PageResponse.of(result.items().stream().map(this::response).toList(), page, size, result.totalItems());
     }
 
     @PatchMapping("/{id}")
@@ -129,7 +133,7 @@ public class DrinkRecordController {
         DrinkRecord record = updateDrinkRecord.handle(principal.id(), id, expectedVersion(ifMatch), request.toCommand());
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(DrinkRecordResponse.from(record));
+                .body(response(record));
     }
 
     @DeleteMapping("/{id}")
@@ -138,6 +142,10 @@ public class DrinkRecordController {
             @PathVariable UUID id) {
         deleteDrinkRecord.handle(principal.id(), id);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
+    private DrinkRecordResponse response(DrinkRecord record) {
+        return DrinkRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()));
     }
 
     private String etag(long version) {

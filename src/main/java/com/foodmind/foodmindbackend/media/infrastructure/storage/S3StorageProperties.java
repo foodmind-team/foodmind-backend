@@ -22,10 +22,12 @@ public class S3StorageProperties {
     private String bucket = "";
     private String region = "us-east-1";
     private String endpoint = "";
+    private String publicEndpoint = "";
     private String accessKey = "";
     private String secretKey = "";
     private String keyPrefix = "media";
     private Duration uploadTtl = Duration.ofMinutes(5);
+    private Duration readTtl = Duration.ofMinutes(15);
     private long maxByteSize = 5 * 1024 * 1024;
     private Duration cleanupDelay = Duration.ofMinutes(15);
     private Set<String> allowedContentTypes = new LinkedHashSet<>(Set.of("image/jpeg", "image/png", "image/webp"));
@@ -35,6 +37,7 @@ public class S3StorageProperties {
         boolean credentialsComplete = (accessKey == null || accessKey.isBlank()) == (secretKey == null || secretKey.isBlank());
         return !enabled || (notBlank(bucket) && notBlank(region) && notBlank(keyPrefix)
                 && uploadTtl != null && !uploadTtl.isNegative() && !uploadTtl.isZero()
+                && readTtl != null && !readTtl.isNegative() && !readTtl.isZero()
                 && maxByteSize > 0 && cleanupDelay != null && !cleanupDelay.isNegative() && !cleanupDelay.isZero()
                 && allowedContentTypes != null && !allowedContentTypes.isEmpty() && credentialsComplete);
     }
@@ -51,6 +54,8 @@ public class S3StorageProperties {
     public void setRegion(String region) { this.region = region; }
     public String getEndpoint() { return endpoint; }
     public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
+    public String getPublicEndpoint() { return publicEndpoint; }
+    public void setPublicEndpoint(String publicEndpoint) { this.publicEndpoint = publicEndpoint; }
     public String getAccessKey() { return accessKey; }
     public void setAccessKey(String accessKey) { this.accessKey = accessKey; }
     public String getSecretKey() { return secretKey; }
@@ -59,6 +64,8 @@ public class S3StorageProperties {
     public void setKeyPrefix(String keyPrefix) { this.keyPrefix = keyPrefix; }
     public Duration getUploadTtl() { return uploadTtl; }
     public void setUploadTtl(Duration uploadTtl) { this.uploadTtl = uploadTtl; }
+    public Duration getReadTtl() { return readTtl; }
+    public void setReadTtl(Duration readTtl) { this.readTtl = readTtl; }
     public long getMaxByteSize() { return maxByteSize; }
     public void setMaxByteSize(long maxByteSize) { this.maxByteSize = maxByteSize; }
     public Duration getCleanupDelay() { return cleanupDelay; }
