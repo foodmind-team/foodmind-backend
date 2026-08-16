@@ -5,6 +5,7 @@ RUN chmod +x mvnw && ./mvnw --no-transfer-progress -DskipTests package
 
 FROM eclipse-temurin:17-jre-jammy AS runtime
 RUN apt-get update \
+    && apt-get upgrade --yes \
     && apt-get install --yes --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home foodmind
