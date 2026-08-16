@@ -57,6 +57,7 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(primaryToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currency").value("SGD"))
+                .andExpect(jsonPath("$.cookingRegion").value("SG"))
                 .andExpect(jsonPath("$.cleanlinessPriority").value(0))
                 .andExpect(jsonPath("$.likedCuisineCodes").isEmpty())
                 .andExpect(jsonPath("$.hardConstraints.requiredDietaryTagCodes").isEmpty());
@@ -79,6 +80,7 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
                                   "foodGoal": "balanced",
                                   "drinkSweetnessPreference": "less_sweet",
                                   "drinkIcePreference": "no_ice",
+                                  "cookingRegion": "us",
                                   "likedCuisineCodes": ["japanese", "CHINESE"],
                                   "dislikedCuisineCodes": ["MALAY"],
                                   "dietaryTagCodes": ["vegetarian", "VEGAN"],
@@ -93,6 +95,7 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.budgetMin").value(3.50))
                 .andExpect(jsonPath("$.budgetMax").value(12.00))
                 .andExpect(jsonPath("$.currency").value("SGD"))
+                .andExpect(jsonPath("$.cookingRegion").value("US"))
                 .andExpect(jsonPath("$.preferredArea").value("Clementi"))
                 .andExpect(jsonPath("$.likedCuisineCodes[0]").value("CHINESE"))
                 .andExpect(jsonPath("$.likedCuisineCodes[1]").value("JAPANESE"))
@@ -111,7 +114,57 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(secondaryToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.likedCuisineCodes").isEmpty())
+                .andExpect(jsonPath("$.cookingRegion").value("SG"))
                 .andExpect(jsonPath("$.allergens").isEmpty());
+    }
+
+    @Test
+    void focusedCookingRegionUpdateSynchronisesWithoutReplacingOtherPreferences() throws Exception {
+        String accessToken = read(register("cooking-region@example.test", "Cooking Region"), "$.accessToken");
+
+        putPreferences(accessToken, """
+                {
+                  "budgetMax": 30.00,
+                  "currency": "SGD",
+                  "dietaryTagCodes": ["VEGAN"],
+                  "allergens": [
+                    { "code": "PEANUT", "severity": "SEVERE" }
+                  ]
+                }
+                """)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cookingRegion").value("SG"));
+
+        mockMvc.perform(put("/api/v1/users/me/preferences/cooking-region")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "cookingRegion": "cn" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cookingRegion").value("CN"))
+                .andExpect(jsonPath("$.budgetMax").value(30.00))
+                .andExpect(jsonPath("$.dietaryTagCodes[0]").value("VEGAN"))
+                .andExpect(jsonPath("$.allergens[0].code").value("PEANUT"));
+
+        putPreferences(accessToken, """
+                {
+                  "budgetMax": 40.00,
+                  "currency": "SGD"
+                }
+                """)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cookingRegion").value("CN"))
+                .andExpect(jsonPath("$.budgetMax").value(40.00));
+
+        mockMvc.perform(put("/api/v1/users/me/preferences/cooking-region")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "cookingRegion": "AU" }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test

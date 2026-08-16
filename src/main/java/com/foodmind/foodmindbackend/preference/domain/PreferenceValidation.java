@@ -26,6 +26,7 @@ public final class PreferenceValidation {
     private static final BigDecimal LONGITUDE_MAX = new BigDecimal("180");
     private static final BigDecimal CLEANLINESS_MIN = BigDecimal.ZERO;
     private static final BigDecimal CLEANLINESS_MAX = BigDecimal.ONE;
+    private static final Set<String> COOKING_REGIONS = Set.of("SG", "US", "CN");
 
     private PreferenceValidation() {
     }
@@ -37,6 +38,7 @@ public final class PreferenceValidation {
         validateCoordinates(replacement, errors);
         validateRange("cleanlinessPriority", replacement.cleanlinessPriority(), 0, 5, errors);
         validateEvidence(replacement.minimumCleanlinessEvidenceScore(), errors);
+        validateCookingRegion(replacement.cookingRegion(), errors);
         validateContradictions(replacement, errors);
         validateDuplicateAllergens(replacement, errors);
         if (!errors.isEmpty()) {
@@ -44,6 +46,15 @@ public final class PreferenceValidation {
                     ErrorCode.VALIDATION_ERROR,
                     ErrorCode.VALIDATION_ERROR.defaultMessage(),
                     errors);
+        }
+    }
+
+    private static void validateCookingRegion(String cookingRegion, List<ApiFieldError> errors) {
+        if (cookingRegion != null && !COOKING_REGIONS.contains(cookingRegion)) {
+            errors.add(new ApiFieldError(
+                    "cookingRegion",
+                    "UNSUPPORTED_REGION",
+                    "Cooking region must be one of SG, US, or CN."));
         }
     }
 

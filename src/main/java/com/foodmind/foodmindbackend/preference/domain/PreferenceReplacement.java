@@ -24,6 +24,7 @@ public record PreferenceReplacement(
         String foodGoal,
         String drinkSweetnessPreference,
         String drinkIcePreference,
+        String cookingRegion,
         List<String> likedCuisineCodes,
         List<String> dislikedCuisineCodes,
         List<String> dietaryTagCodes,
