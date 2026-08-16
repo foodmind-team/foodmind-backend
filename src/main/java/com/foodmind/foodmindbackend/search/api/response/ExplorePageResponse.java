@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.search.api.response;
 
 import com.foodmind.foodmindbackend.search.domain.ExplorePage;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * @description:
@@ -12,9 +13,9 @@ import java.util.List;
 
 public record ExplorePageResponse(List<ExploreResultResponse> items, String nextCursor, boolean hasNext) {
 
-    public static ExplorePageResponse from(ExplorePage page) {
+    public static ExplorePageResponse from(ExplorePage page, Function<String, String> imageResolver) {
         return new ExplorePageResponse(
-                page.items().stream().map(ExploreResultResponse::from).toList(),
+                page.items().stream().map(item -> ExploreResultResponse.from(item, imageResolver.apply(item.imageObjectKey()))).toList(),
                 page.nextCursor(),
                 page.hasNext());
     }

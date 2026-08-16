@@ -28,11 +28,16 @@ public record DrinkRecordResponse(
         FoodRecordVisibility visibility,
         UUID groupId,
         UUID mediaAssetId,
+        String imageUrl,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         Long version) {
 
     public static DrinkRecordResponse from(DrinkRecord record) {
+        return from(record, null);
+    }
+
+    public static DrinkRecordResponse from(DrinkRecord record, String imageUrl) {
         return new DrinkRecordResponse(
                 record.id(),
                 record.drinkName(),
@@ -48,6 +53,7 @@ public record DrinkRecordResponse(
                 record.visibility(),
                 record.groupId(),
                 record.mediaAssetId(),
+                imageUrl,
                 record.createdAt(),
                 record.updatedAt(),
                 record.version());

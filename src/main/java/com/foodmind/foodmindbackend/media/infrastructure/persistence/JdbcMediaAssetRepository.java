@@ -53,6 +53,19 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
     }
 
     @Override
+    public Optional<MediaAsset> findReady(UUID assetId) {
+        return jdbcTemplate.query("""
+                        SELECT id, owner_user_id, object_key, content_type, byte_size, checksum_sha256,
+                               status, created_at, finalised_at, deleted_at
+                        FROM media_asset
+                        WHERE id = :id AND status = 'READY'
+                        """,
+                new MapSqlParameterSource().addValue("id", assetId),
+                (rs, rowNum) -> mapAsset(rs))
+                .stream().findFirst();
+    }
+
+    @Override
     public boolean markReady(UUID ownerUserId, UUID assetId, OffsetDateTime finalisedAt) {
         return jdbcTemplate.update("""
                         UPDATE media_asset
