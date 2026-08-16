@@ -3148,6 +3148,11 @@ components:
           type: string
           nullable: true
           maxLength: 500
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: READY media attached to an authorised record. Resolve it through the media access endpoint.
         imageReference:
           type: string
           nullable: true
