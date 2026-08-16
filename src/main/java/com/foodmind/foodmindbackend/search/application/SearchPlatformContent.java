@@ -3,12 +3,16 @@ package com.foodmind.foodmindbackend.search.application;
 import com.foodmind.foodmindbackend.common.error.ApiException;
 import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.search.application.port.AuthorisedSearchQuery;
+import com.foodmind.foodmindbackend.search.application.port.ReadyMediaQuery;
 import com.foodmind.foodmindbackend.search.domain.SearchCursor;
 import com.foodmind.foodmindbackend.search.domain.SearchPage;
 import com.foodmind.foodmindbackend.search.domain.SearchSourceType;
+import com.foodmind.foodmindbackend.search.domain.SearchDocument;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,9 +30,11 @@ public class SearchPlatformContent {
     public static final int MAX_PAGE_SIZE = 100;
 
     private final AuthorisedSearchQuery authorisedSearchQuery;
+    private final ReadyMediaQuery readyMediaQuery;
 
-    public SearchPlatformContent(AuthorisedSearchQuery authorisedSearchQuery) {
+    public SearchPlatformContent(AuthorisedSearchQuery authorisedSearchQuery, ReadyMediaQuery readyMediaQuery) {
         this.authorisedSearchQuery = authorisedSearchQuery;
+        this.readyMediaQuery = readyMediaQuery;
     }
 
     @Transactional(readOnly = true)
@@ -44,6 +50,18 @@ public class SearchPlatformContent {
                 ? EnumSet.allOf(SearchSourceType.class)
                 : EnumSet.copyOf(sourceTypes);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
-        return authorisedSearchQuery.search(actorUserId, trimmed, safeTypes, safeSize, after);
+        SearchPage page = authorisedSearchQuery.search(actorUserId, trimmed, safeTypes, safeSize, after);
+        return new SearchPage(withReadyMedia(page.items()), page.nextCursor());
+    }
+
+    private List<SearchDocument> withReadyMedia(List<SearchDocument> documents) {
+        Set<UUID> recordIds = documents.stream()
+                .filter(document -> document.sourceType() == SearchSourceType.FOOD_RECORD)
+                .map(SearchDocument::sourceId)
+                .collect(Collectors.toSet());
+        var mediaByRecordId = readyMediaQuery.findReadyFoodMedia(recordIds);
+        return documents.stream()
+                .map(document -> document.withMediaAssetId(mediaByRecordId.get(document.sourceId())))
+                .toList();
     }
 }

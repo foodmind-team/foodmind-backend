@@ -20,8 +20,14 @@ public record SearchDocument(
         String title,
         String subtitle,
         String snippet,
+        UUID mediaAssetId,
         String imageReference,
         OffsetDateTime occurredAt,
         OffsetDateTime sortAt,
         BigDecimal relevance) {
+
+    public SearchDocument withMediaAssetId(UUID value) {
+        return new SearchDocument(sourceType, sourceId, ownerUserId, groupId, visibility, title, subtitle, snippet,
+                value, imageReference, occurredAt, sortAt, relevance);
+    }
 }

@@ -37,6 +37,7 @@ class MediaAssetCleanupTest {
         List<String> deletedKeys = new ArrayList<>();
         ObjectStoragePort storage = new ObjectStoragePort() {
             @Override public UploadInstruction createUploadInstruction(String key, String type, long size, String checksum) { throw new UnsupportedOperationException(); }
+            @Override public ReadInstruction createReadInstruction(String key) { throw new UnsupportedOperationException(); }
             @Override public ObjectMetadata headObject(String key) { throw new UnsupportedOperationException(); }
             @Override public void deleteObject(String key) { deletedKeys.add(key); }
         };
@@ -57,6 +58,8 @@ class MediaAssetCleanupTest {
         private FakeRepository(MediaAsset pending) { this.pending = pending; }
         @Override public void savePending(MediaAsset asset) { }
         @Override public Optional<MediaAsset> findOwned(UUID owner, UUID id) { return Optional.empty(); }
+        @Override public Optional<MediaAsset> findAccessibleReady(UUID actor, UUID id) { return Optional.empty(); }
+        @Override public int detachOwnedRecords(UUID owner, UUID id) { return 0; }
         @Override public boolean markReady(UUID owner, UUID id, OffsetDateTime at) { return false; }
         @Override public Optional<MediaAsset> softDelete(UUID owner, UUID id, OffsetDateTime at) {
             softDeleted.add(id);

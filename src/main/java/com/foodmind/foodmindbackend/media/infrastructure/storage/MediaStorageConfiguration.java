@@ -41,12 +41,13 @@ class MediaStorageConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "foodmind.media.storage", name = "enabled", havingValue = "true")
     S3Presigner mediaS3Presigner(S3StorageProperties properties) {
+        String presignEndpoint = properties.getPresignEndpoint();
         var builder = S3Presigner.builder()
                 .region(Region.of(properties.getRegion()))
                 .credentialsProvider(credentialsProvider(properties))
-                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(!properties.getEndpoint().isBlank()).build());
-        if (!properties.getEndpoint().isBlank()) {
-            builder.endpointOverride(URI.create(properties.getEndpoint()));
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(!presignEndpoint.isBlank()).build());
+        if (!presignEndpoint.isBlank()) {
+            builder.endpointOverride(URI.create(presignEndpoint));
         }
         return builder.build();
     }

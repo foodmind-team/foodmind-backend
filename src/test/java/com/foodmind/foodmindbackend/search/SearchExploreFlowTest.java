@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,7 +49,7 @@ class SearchExploreFlowTest extends PostgreSqlContainerSupport {
     void cleanUserContent() {
         jdbcTemplate.execute("""
                 TRUNCATE TABLE want_to_try, group_recommendation_share, recommendation_candidate, recommendation_session,
-                    food_record, group_invitation, group_membership, trusted_group, auth_session, app_user CASCADE
+                    food_record, media_asset, group_invitation, group_membership, trusted_group, auth_session, app_user CASCADE
                 """);
     }
 
@@ -65,6 +66,19 @@ class SearchExploreFlowTest extends PostgreSqlContainerSupport {
         String groupId = createGroup(ownerToken, "Search Group");
         joinGroup(ownerToken, memberToken, groupId);
         String groupRecordId = createFoodRecord(ownerToken, "Searchable group record", "GROUP", groupId);
+        String ownerUserId = jdbcTemplate.queryForObject(
+                "SELECT id::text FROM app_user WHERE email = 'search-owner@example.test'", String.class);
+        String mediaAssetId = UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                INSERT INTO media_asset (
+                    id, owner_user_id, object_key, content_type, byte_size, checksum_sha256,
+                    status, finalised_at
+                ) VALUES (?, ?, ?, 'image/jpeg', 128,
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'READY', CURRENT_TIMESTAMP)
+                """, UUID.fromString(mediaAssetId), UUID.fromString(ownerUserId),
+                "media/" + ownerUserId + "/" + mediaAssetId + "/original");
+        jdbcTemplate.update("UPDATE food_record SET media_asset_id = ? WHERE id = ?",
+                UUID.fromString(mediaAssetId), UUID.fromString(groupRecordId));
 
         mockMvc.perform(get("/api/v1/search")
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
@@ -87,14 +101,18 @@ class SearchExploreFlowTest extends PostgreSqlContainerSupport {
                         .queryParam("types", "FOOD_RECORD")
                         .queryParam("size", "20"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)));
+                .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)))
+                .andExpect(jsonPath("$.items[?(@.sourceId == '%s')].mediaAssetId".formatted(groupRecordId),
+                        hasItem(mediaAssetId)));
         mockMvc.perform(get("/api/v1/explore")
                         .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
                         .queryParam("types", "FOOD_RECORD")
                         .queryParam("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[*].sourceType", hasItem("GROUP_RECORD")))
-                .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)));
+                .andExpect(jsonPath("$.items[*].sourceId", hasItem(groupRecordId)))
+                .andExpect(jsonPath("$.items[?(@.sourceId == '%s')].mediaAssetId".formatted(groupRecordId),
+                        hasItem(mediaAssetId)));
 
         mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{userId}", groupId, secondaryUserId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))

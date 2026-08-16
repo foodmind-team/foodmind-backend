@@ -86,6 +86,7 @@ public class JdbcAuthorisedExploreQuery implements AuthorisedExploreQuery {
                 rs.getString("subtitle"),
                 rs.getString("body_excerpt"),
                 null,
+                null,
                 rs.getObject("occurred_at", OffsetDateTime.class),
                 rs.getObject("sort_at", OffsetDateTime.class),
                 null);

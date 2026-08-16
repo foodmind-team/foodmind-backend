@@ -12,11 +12,15 @@ import java.util.Map;
 
 public interface ObjectStoragePort {
     UploadInstruction createUploadInstruction(String objectKey, String contentType, long byteSize, String checksumSha256);
+    ReadInstruction createReadInstruction(String objectKey);
     ObjectMetadata headObject(String objectKey);
     void deleteObject(String objectKey);
 
     record UploadInstruction(String uploadUrl, Map<String, String> requiredHeaders, OffsetDateTime expiresAt) {
         public UploadInstruction { requiredHeaders = Map.copyOf(requiredHeaders); }
+    }
+
+    record ReadInstruction(String readUrl, OffsetDateTime expiresAt) {
     }
 
     record ObjectMetadata(String contentType, long byteSize, String checksumSha256) {

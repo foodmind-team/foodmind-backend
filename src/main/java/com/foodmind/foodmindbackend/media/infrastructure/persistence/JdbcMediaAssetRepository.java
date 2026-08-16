@@ -53,6 +53,67 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
     }
 
     @Override
+    public Optional<MediaAsset> findAccessibleReady(UUID actorUserId, UUID assetId) {
+        return jdbcTemplate.query("""
+                        SELECT asset.id, asset.owner_user_id, asset.object_key, asset.content_type, asset.byte_size,
+                               asset.checksum_sha256, asset.status, asset.created_at, asset.finalised_at, asset.deleted_at
+                        FROM media_asset AS asset
+                        WHERE asset.id = :id
+                          AND asset.status = 'READY'
+                          AND (
+                              asset.owner_user_id = :actorUserId
+                              OR EXISTS (
+                                  SELECT 1
+                                  FROM food_record AS record
+                                  JOIN trusted_group AS trusted_group ON trusted_group.id = record.group_id
+                                  JOIN group_membership AS membership
+                                    ON membership.group_id = record.group_id
+                                   AND membership.user_id = :actorUserId
+                                  WHERE record.media_asset_id = asset.id
+                                    AND record.deleted_at IS NULL
+                                    AND record.visibility = 'GROUP'
+                                    AND trusted_group.status = 'ACTIVE'
+                                    AND membership.status = 'ACTIVE'
+                              )
+                              OR EXISTS (
+                                  SELECT 1
+                                  FROM drink_record AS record
+                                  JOIN trusted_group AS trusted_group ON trusted_group.id = record.group_id
+                                  JOIN group_membership AS membership
+                                    ON membership.group_id = record.group_id
+                                   AND membership.user_id = :actorUserId
+                                  WHERE record.media_asset_id = asset.id
+                                    AND record.deleted_at IS NULL
+                                    AND record.visibility = 'GROUP'
+                                    AND trusted_group.status = 'ACTIVE'
+                                    AND membership.status = 'ACTIVE'
+                              )
+                          )
+                        """,
+                new MapSqlParameterSource().addValue("id", assetId).addValue("actorUserId", actorUserId),
+                (rs, rowNum) -> mapAsset(rs))
+                .stream().findFirst();
+    }
+
+    @Override
+    public int detachOwnedRecords(UUID ownerUserId, UUID assetId) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("ownerUserId", ownerUserId)
+                .addValue("assetId", assetId);
+        int detachedFoodRecords = jdbcTemplate.update("""
+                UPDATE food_record
+                SET media_asset_id = NULL
+                WHERE owner_user_id = :ownerUserId AND media_asset_id = :assetId
+                """, parameters);
+        int detachedDrinkRecords = jdbcTemplate.update("""
+                UPDATE drink_record
+                SET media_asset_id = NULL
+                WHERE owner_user_id = :ownerUserId AND media_asset_id = :assetId
+                """, parameters);
+        return detachedFoodRecords + detachedDrinkRecords;
+    }
+
+    @Override
     public boolean markReady(UUID ownerUserId, UUID assetId, OffsetDateTime finalisedAt) {
         return jdbcTemplate.update("""
                         UPDATE media_asset

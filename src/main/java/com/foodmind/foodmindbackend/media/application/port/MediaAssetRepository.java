@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface MediaAssetRepository {
     void savePending(MediaAsset asset);
     Optional<MediaAsset> findOwned(UUID ownerUserId, UUID assetId);
+    Optional<MediaAsset> findAccessibleReady(UUID actorUserId, UUID assetId);
+    int detachOwnedRecords(UUID ownerUserId, UUID assetId);
     boolean markReady(UUID ownerUserId, UUID assetId, OffsetDateTime finalisedAt);
     Optional<MediaAsset> softDelete(UUID ownerUserId, UUID assetId, OffsetDateTime deletedAt);
     List<MediaAsset> findPendingCreatedBefore(OffsetDateTime cutoff, int limit);

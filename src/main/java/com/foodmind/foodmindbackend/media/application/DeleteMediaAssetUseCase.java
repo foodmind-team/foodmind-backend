@@ -11,6 +11,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * @description: Soft-deletes owned assets and leaves failed physical deletion retry-safe.
@@ -33,12 +34,14 @@ public class DeleteMediaAssetUseCase {
         this.clock = clock;
     }
 
+    @Transactional
     public void delete(UUID ownerUserId, UUID assetId) {
         MediaAsset asset = repository.findOwned(ownerUserId, assetId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         if (asset.status() == MediaAssetStatus.DELETED) {
             return;
         }
+        repository.detachOwnedRecords(ownerUserId, assetId);
         MediaAsset deleted = repository.softDelete(ownerUserId, assetId, OffsetDateTime.now(clock))
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         try {

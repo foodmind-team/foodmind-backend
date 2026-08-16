@@ -11,11 +11,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 /**
@@ -49,9 +52,26 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
                     .signatureDuration(properties.getUploadTtl()).putObjectRequest(request).build());
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Content-Type", contentType);
-            headers.put("Content-Length", Long.toString(byteSize));
             headers.put("x-amz-checksum-sha256", checksumBase64);
             return new UploadInstruction(signed.url().toExternalForm(), headers,
+                    OffsetDateTime.ofInstant(signed.expiration(), ZoneOffset.UTC));
+        } catch (RuntimeException exception) {
+            throw new ObjectStorageUnavailableException(exception);
+        }
+    }
+
+    @Override
+    public ReadInstruction createReadInstruction(String objectKey) {
+        try {
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(objectKey)
+                    .build();
+            PresignedGetObjectRequest signed = s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                    .signatureDuration(properties.getReadTtl())
+                    .getObjectRequest(request)
+                    .build());
+            return new ReadInstruction(signed.url().toExternalForm(),
                     OffsetDateTime.ofInstant(signed.expiration(), ZoneOffset.UTC));
         } catch (RuntimeException exception) {
             throw new ObjectStorageUnavailableException(exception);

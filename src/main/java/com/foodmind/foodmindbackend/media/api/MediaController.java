@@ -3,7 +3,9 @@ package com.foodmind.foodmindbackend.media.api;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.media.api.request.CreateMediaUploadRequest;
 import com.foodmind.foodmindbackend.media.api.response.MediaAssetResponse;
+import com.foodmind.foodmindbackend.media.api.response.MediaAccessResponse;
 import com.foodmind.foodmindbackend.media.api.response.MediaUploadInstructionResponse;
+import com.foodmind.foodmindbackend.media.application.CreateMediaAccessUseCase;
 import com.foodmind.foodmindbackend.media.application.CreateMediaUploadUseCase;
 import com.foodmind.foodmindbackend.media.application.DeleteMediaAssetUseCase;
 import com.foodmind.foodmindbackend.media.application.FinaliseMediaUploadUseCase;
@@ -11,8 +13,10 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,12 +38,22 @@ public class MediaController {
     private final CreateMediaUploadUseCase createMediaUpload;
     private final FinaliseMediaUploadUseCase finaliseMediaUpload;
     private final DeleteMediaAssetUseCase deleteMediaAsset;
+    private final CreateMediaAccessUseCase createMediaAccess;
 
     public MediaController(CreateMediaUploadUseCase createMediaUpload, FinaliseMediaUploadUseCase finaliseMediaUpload,
-            DeleteMediaAssetUseCase deleteMediaAsset) {
+            DeleteMediaAssetUseCase deleteMediaAsset, CreateMediaAccessUseCase createMediaAccess) {
         this.createMediaUpload = createMediaUpload;
         this.finaliseMediaUpload = finaliseMediaUpload;
         this.deleteMediaAsset = deleteMediaAsset;
+        this.createMediaAccess = createMediaAccess;
+    }
+
+    @GetMapping("/{mediaAssetId}/access")
+    ResponseEntity<MediaAccessResponse> access(@AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable java.util.UUID mediaAssetId) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(MediaAccessResponse.from(createMediaAccess.create(principal.id(), mediaAssetId)));
     }
 
     @PostMapping("/uploads")

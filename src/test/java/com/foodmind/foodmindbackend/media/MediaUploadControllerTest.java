@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.media;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +11,7 @@ import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +74,8 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.uploadUrl").value(containsString("https://storage.test/")))
                 .andExpect(jsonPath("$.requiredHeaders.Content-Type").value("image/jpeg"))
+                .andExpect(jsonPath("$.requiredHeaders.x-amz-checksum-sha256").exists())
+                .andExpect(jsonPath("$.requiredHeaders.Content-Length").doesNotExist())
                 .andExpect(jsonPath("$.objectKey").doesNotExist())
                 .andReturn();
 
@@ -134,14 +138,92 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
     void deletionIsIdempotentAndPreventsFutureFinalisation() throws Exception {
         String token = tokenFor("media-delete@example.test");
         String assetId = createAsset(token);
+        StorageTestConfiguration.METADATA.set(new ObjectStoragePort.ObjectMetadata("image/jpeg", 128,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk());
+        UUID ownerUserId = userId("media-delete@example.test");
+        UUID foodRecordId = UUID.randomUUID();
+        UUID drinkRecordId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO food_record (id, owner_user_id, meal_name_snapshot, occurred_at, media_asset_id)
+                VALUES (?, ?, 'Delete media food', CURRENT_TIMESTAMP, ?)
+                """, foodRecordId, ownerUserId, UUID.fromString(assetId));
+        jdbcTemplate.update("""
+                INSERT INTO drink_record (id, owner_user_id, drink_name, shop_name_snapshot, occurred_at, media_asset_id)
+                VALUES (?, ?, 'Delete media drink', 'Test shop', CURRENT_TIMESTAMP, ?)
+                """, drinkRecordId, ownerUserId, UUID.fromString(assetId));
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/media/{id}", assetId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNoContent());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT media_asset_id FROM food_record WHERE id = ?", UUID.class, foodRecordId)).isNull();
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT media_asset_id FROM drink_record WHERE id = ?", UUID.class, drinkRecordId)).isNull();
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/media/{id}", assetId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNoContent());
         mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void readAccessAllowsOwnerAndActiveGroupMemberButHidesPendingAndUnauthorisedAssets() throws Exception {
+        String ownerToken = tokenFor("media-access-owner@example.test");
+        String memberToken = tokenFor("media-access-member@example.test");
+        String outsiderToken = tokenFor("media-access-outsider@example.test");
+        String assetId = createAsset(ownerToken);
+        StorageTestConfiguration.METADATA.set(new ObjectStoragePort.ObjectMetadata("image/jpeg", 128,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        mockMvc.perform(get("/api/v1/media/{id}/access", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/media/{id}/access", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.mediaAssetId").value(assetId))
+                .andExpect(jsonPath("$.readUrl").value("https://storage.test/read"))
+                .andExpect(jsonPath("$.expiresAt").value("2026-07-30T16:50:00Z"))
+                .andExpect(jsonPath("$.objectKey").doesNotExist());
+        mockMvc.perform(get("/api/v1/media/{id}/access", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderToken)))
+                .andExpect(status().isNotFound());
+
+        UUID ownerUserId = userId("media-access-owner@example.test");
+        UUID memberUserId = userId("media-access-member@example.test");
+        UUID groupId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO trusted_group (id, name, created_by_user_id) VALUES (?, 'Media access group', ?)
+                """, groupId, ownerUserId);
+        jdbcTemplate.update("""
+                INSERT INTO group_membership (id, group_id, user_id, role, status, joined_at)
+                VALUES (?, ?, ?, 'OWNER', 'ACTIVE', CURRENT_TIMESTAMP),
+                       (?, ?, ?, 'MEMBER', 'ACTIVE', CURRENT_TIMESTAMP)
+                """, UUID.randomUUID(), groupId, ownerUserId, UUID.randomUUID(), groupId, memberUserId);
+        jdbcTemplate.update("""
+                INSERT INTO food_record (
+                    id, owner_user_id, meal_name_snapshot, occurred_at, visibility, group_id, media_asset_id
+                ) VALUES (?, ?, 'Shared media food', CURRENT_TIMESTAMP, 'GROUP', ?, ?)
+                """, UUID.randomUUID(), ownerUserId, groupId, UUID.fromString(assetId));
+
+        mockMvc.perform(get("/api/v1/media/{id}/access", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken)))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("UPDATE group_membership SET status = 'LEFT', ended_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                memberUserId);
+        mockMvc.perform(get("/api/v1/media/{id}/access", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    private UUID userId(String email) {
+        return jdbcTemplate.queryForObject("SELECT id FROM app_user WHERE email = ?", UUID.class, email);
     }
 
     private String createAsset(String token) throws Exception {
@@ -180,8 +262,12 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
                 @Override
                 public UploadInstruction createUploadInstruction(String key, String contentType, long byteSize, String checksum) {
                     return new UploadInstruction("https://storage.test/" + key,
-                            Map.of("Content-Type", contentType, "Content-Length", Long.toString(byteSize)),
+                            Map.of("Content-Type", contentType, "x-amz-checksum-sha256", "test-checksum"),
                             OffsetDateTime.parse("2026-07-30T16:45:00Z"));
+                }
+                @Override public ReadInstruction createReadInstruction(String objectKey) {
+                    return new ReadInstruction("https://storage.test/read",
+                            OffsetDateTime.parse("2026-07-30T16:50:00Z"));
                 }
                 @Override public ObjectMetadata headObject(String objectKey) {
                     ObjectStoragePort.ObjectMetadata metadata = METADATA.get();
