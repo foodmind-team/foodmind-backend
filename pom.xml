@@ -32,7 +32,23 @@
         <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <aws.sdk.version>2.46.8</aws.sdk.version>
+        <!-- Security patch overrides kept explicit until the next Spring Boot patch release. -->
+        <netty.version>4.2.16.Final</netty.version>
+        <postgresql.version>42.7.13</postgresql.version>
+        <jackson-bom.version>3.1.5</jackson-bom.version>
+        <httpclient5.version>5.6.3</httpclient5.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
+        <log4j2.version>2.25.5</log4j2.version>
     </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>2.21.5</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
