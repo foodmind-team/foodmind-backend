@@ -45,7 +45,7 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                         SELECT user_id, budget_min, budget_max, currency, spice_tolerance, preferred_area,
                                preferred_latitude, preferred_longitude, max_distance_km, cleanliness_priority,
                                minimum_cleanliness_evidence_score, food_goal, drink_sweetness_preference,
-                               drink_ice_preference, created_at, updated_at, version
+                               drink_ice_preference, cooking_region, created_at, updated_at, version
                         FROM user_preference
                         WHERE user_id = ?
                         """,
@@ -77,6 +77,20 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
         return snapshotForUser(userId);
     }
 
+    @Override
+    public PreferenceSnapshot updateCookingRegion(UUID userId, String cookingRegion) {
+        jdbcTemplate.update("""
+                        INSERT INTO user_preference (user_id, cooking_region)
+                        VALUES (?, ?)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            cooking_region = EXCLUDED.cooking_region,
+                            version = user_preference.version + 1
+                        """,
+                userId,
+                cookingRegion);
+        return snapshotForUser(userId);
+    }
+
     private PreferenceSnapshot scalarSnapshot(ResultSet rs, UUID userId) throws SQLException {
         return new PreferenceSnapshot(
                 userId,
@@ -93,6 +107,7 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                 rs.getString("food_goal"),
                 rs.getString("drink_sweetness_preference"),
                 rs.getString("drink_ice_preference"),
+                rs.getString("cooking_region"),
                 cuisineCodes(userId, "LIKE"),
                 cuisineCodes(userId, "DISLIKE"),
                 dietaryTagCodes(userId),
@@ -119,6 +134,7 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                 null,
                 null,
                 null,
+                "SG",
                 List.of(),
                 List.of(),
                 List.of(),
@@ -135,9 +151,9 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                             user_id, budget_min, budget_max, currency, spice_tolerance, preferred_area,
                             preferred_latitude, preferred_longitude, max_distance_km, cleanliness_priority,
                             minimum_cleanliness_evidence_score, food_goal, drink_sweetness_preference,
-                            drink_ice_preference, version
+                            drink_ice_preference, cooking_region, version
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'SG'), 0)
                         ON CONFLICT (user_id) DO UPDATE SET
                             budget_min = EXCLUDED.budget_min,
                             budget_max = EXCLUDED.budget_max,
@@ -152,6 +168,7 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                             food_goal = EXCLUDED.food_goal,
                             drink_sweetness_preference = EXCLUDED.drink_sweetness_preference,
                             drink_ice_preference = EXCLUDED.drink_ice_preference,
+                            cooking_region = COALESCE(?, user_preference.cooking_region),
                             version = user_preference.version + 1
                         """,
                 userId,
@@ -167,7 +184,9 @@ public class JdbcPreferenceRepository implements PreferenceQuery, PreferenceComm
                 replacement.minimumCleanlinessEvidenceScore(),
                 replacement.foodGoal(),
                 replacement.drinkSweetnessPreference(),
-                replacement.drinkIcePreference());
+                replacement.drinkIcePreference(),
+                replacement.cookingRegion(),
+                replacement.cookingRegion());
     }
 
     private void deleteExistingJoins(UUID userId) {

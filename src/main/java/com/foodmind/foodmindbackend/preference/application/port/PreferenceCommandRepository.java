@@ -14,4 +14,6 @@ import java.util.UUID;
 public interface PreferenceCommandRepository {
 
     PreferenceSnapshot replace(UUID userId, PreferenceReplacement replacement);
+
+    PreferenceSnapshot updateCookingRegion(UUID userId, String cookingRegion);
 }

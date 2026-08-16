@@ -2,9 +2,11 @@ package com.foodmind.foodmindbackend.preference.api;
 
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.preference.api.request.ReplacePreferencesRequest;
+import com.foodmind.foodmindbackend.preference.api.request.UpdateCookingRegionRequest;
 import com.foodmind.foodmindbackend.preference.api.response.UserPreferencesResponse;
 import com.foodmind.foodmindbackend.preference.application.GetPreferences;
 import com.foodmind.foodmindbackend.preference.application.ReplacePreferences;
+import com.foodmind.foodmindbackend.preference.application.UpdateCookingRegion;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,10 +28,15 @@ public class UserPreferenceController {
 
     private final GetPreferences getPreferences;
     private final ReplacePreferences replacePreferences;
+    private final UpdateCookingRegion updateCookingRegion;
 
-    public UserPreferenceController(GetPreferences getPreferences, ReplacePreferences replacePreferences) {
+    public UserPreferenceController(
+            GetPreferences getPreferences,
+            ReplacePreferences replacePreferences,
+            UpdateCookingRegion updateCookingRegion) {
         this.getPreferences = getPreferences;
         this.replacePreferences = replacePreferences;
+        this.updateCookingRegion = updateCookingRegion;
     }
 
     @GetMapping
@@ -42,5 +49,13 @@ public class UserPreferenceController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @Valid @RequestBody ReplacePreferencesRequest request) {
         return UserPreferencesResponse.from(replacePreferences.replace(principal.id(), request.toReplacement()));
+    }
+
+    @PutMapping("/cooking-region")
+    UserPreferencesResponse updateCookingRegion(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @Valid @RequestBody UpdateCookingRegionRequest request) {
+        return UserPreferencesResponse.from(
+                updateCookingRegion.update(principal.id(), request.normalisedCookingRegion()));
     }
 }
