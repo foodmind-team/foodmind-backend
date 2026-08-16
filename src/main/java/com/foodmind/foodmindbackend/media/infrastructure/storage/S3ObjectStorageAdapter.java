@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -81,7 +82,11 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
     @Override
     public ObjectMetadata headObject(String objectKey) {
         try {
-            var object = s3Client.headObject(HeadObjectRequest.builder().bucket(properties.getBucket()).key(objectKey).build());
+            var object = s3Client.headObject(HeadObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(objectKey)
+                    .checksumMode(ChecksumMode.ENABLED)
+                    .build());
             String checksum = object.checksumSHA256() == null ? null
                     : HexFormat.of().formatHex(Base64.getDecoder().decode(object.checksumSHA256()));
             return new ObjectMetadata(object.contentType(), object.contentLength(), checksum);
