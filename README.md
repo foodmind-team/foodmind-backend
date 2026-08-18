@@ -1,288 +1,105 @@
 # FoodMind Backend
 
-FoodMind Backend is the only public business API and the system of record for the FoodMind platform. Android and Web clients communicate with this service; they must never call the Agent or model-inference services directly.
+FoodMind Backend is the public business API and system of record for FoodMind. It is the only service called by the Web and Android clients; private Agent and inference services are reached through this API, never directly from a client.
 
-> **Current status:** the Spring Boot runtime, PostgreSQL/Flyway migrations,
-> public OpenAPI, security wiring, and the core client-facing modules are
-> implemented. The remaining release gates are provider/consumer generation,
-> cross-repository authenticated E2E, and device-level Android verification.
+## What it provides
 
-## Responsibilities
-
-This repository owns:
-
-- User registration, authentication, and JWT validation
-- User preferences and hard dietary constraints
-- Food and drink records
-- Personal history
-- Trusted groups, membership, and content visibility
-- Group feeds, shared-decision context, and Want to Try items
-- Meal, place, product, and recipe catalogue data
-- Authorised platform search
-- Recommendation-session orchestration and ordered candidate delivery
-- Recommendation feedback events
-- Cooking-plan and Chatbot request orchestration
-- Dashboard metrics and weekly recaps
-- PostgreSQL persistence and Flyway migrations
-- Public OpenAPI contracts
-- Permission checks, audit data, and trace correlation
-
-This repository does not own:
-
-- LangGraph state machines or Agent prompts
-- UserCF, ItemCF, model training, or model evaluation
-- Runtime model inference implementation
-- Android or Web presentation logic
-- Direct public-internet restaurant search
-- Public or follower-based social feeds
-
-## Product Experience Contract
-
-The clients organise the same backend capabilities around two home modes:
-
-- **Eat out & delivery** is the default. A prominent generation command uses
-  the user's authorised history, trusted-group evidence, current context, and
-  curated catalogue candidates.
-- **Cooking** submits manually supplied pantry/ingredient, time, budget,
-  serving, and dietary context to the separate Cooking Planner workflow.
-
-The recommendation response still contains up to three intentionally different
-ordered candidates. Clients initially spotlight the lead candidate and may
-display the remaining candidates through an explicit “try another” interaction
-without creating a new session.
-
-Groups remains a core shared workspace. An Explore screen may compose
-authorised group-visible records and curated platform content, but the backend
-does not provide a public social feed or bypass visibility checks.
-
-## System Boundary
+- Account authentication, profiles, preferences, and permission enforcement
+- Food and drink records, history, trusted groups, Explore, search, and Want to Try
+- Recommendation sessions and feedback, cooking-plan orchestration, chat, dashboards, and weekly recaps
+- PostgreSQL persistence, Flyway migrations, a versioned OpenAPI contract, and optional private media storage
 
 ```text
-Android ─┐
-         ├── HTTPS /api/v1 ──> Spring Boot ──> PostgreSQL
-Web ─────┘                         │
-                                  ├── private Agent service
-                                  ├── private inference service
-                                  └── optional S3 image storage
+Web / Android --> HTTPS /api/v1 --> Spring Boot --> PostgreSQL
+                                        |--> private Agents
+                                        |--> private inference service
+                                        '--> optional S3-compatible storage
 ```
 
-Spring Boot remains authoritative even when an internal service produces an AI or ML result. It authenticates the user, selects authorised context, validates the returned schema, persists the result, and decides what is safe to expose to the client.
+Spring Boot remains authoritative for authentication, authorisation, validation, persistence, and data returned to clients.
 
-## Repository Structure
+## Prerequisites
 
-```text
-foodmind-backend/
-├── .github/workflows/             # CI/CD workflows
-├── docs/
-│   ├── api/                       # API conventions and contract notes
-│   ├── architecture/              # Backend architecture decisions
-│   ├── database/                  # PostgreSQL schema hand-off and validation
-│   ├── planning/                  # Ordered feature-branch implementation plans
-│   └── operations/                # Local and deployment runbooks
-├── postman/                       # Directly importable API test assets
-├── src/main/java/com/foodmind/foodmindbackend/
-│   ├── common/
-│   │   ├── api/                   # Shared API representations
-│   │   ├── config/                # Application configuration
-│   │   ├── error/                 # Error mapping
-│   │   ├── security/              # Authentication and authorisation
-│   │   └── validation/            # Shared validation rules
-│   ├── auth/
-│   ├── user/
-│   ├── preference/
-│   ├── catalog/
-│   ├── record/
-│   ├── group/
-│   ├── wanttotry/
-│   ├── search/
-│   ├── recommendation/
-│   ├── cooking/
-│   ├── chat/
-│   ├── analytics/
-│   └── integration/
-│       ├── agent/
-│       ├── model/
-│       └── storage/
-├── src/main/resources/
-│   ├── db/migration/              # Flyway migrations
-│   ├── openapi/                   # Committed public API specification
-│   └── seed/                      # Controlled catalogue seed data
-└── src/test/
-    ├── java/.../
-    │   ├── unit/
-    │   ├── integration/
-    │   ├── contract/
-    │   └── architecture/
-    └── resources/
-        ├── contracts/
-        └── fixtures/
+- Java 17
+- Docker Desktop or Docker Engine with Compose
+- Python 3 (for OpenAPI validation)
+
+## Quick start
+
+The following starts PostgreSQL locally and then runs the API on `http://localhost:8080`.
+
+```bash
+git clone https://github.com/foodmind-team/foodmind-backend.git
+cd foodmind-backend
+cp .env.example .env
+docker compose up -d postgres
+set -a; source .env; set +a
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-## Domain Modules
+On Windows, use `Copy-Item .env.example .env`, start PostgreSQL with `docker compose up -d postgres`, set the variables from `.env` in the current shell or IDE, then run `./mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local`.
 
-| Module | Intended ownership |
+The local profile applies Flyway migrations automatically. It uses the PostgreSQL port in `.env` (the example uses `5432`); change both `POSTGRES_PORT` and `DB_URL` if that port is occupied.
+
+### Local endpoints
+
+| Endpoint | URL |
 | --- | --- |
-| `auth` | Registration, login, JWT issuance, authentication principal |
-| `user` | Account identity and user-owned profile data |
-| `preference` | Budget, cuisine, spice, dietary, location, and cleanliness preferences |
-| `catalog` | Meal, Place, Food Product, and Recipe reference data |
-| `recipe` | Authenticated user-owned recipe CRUD, optimistic versions, and soft deletion |
-| `record` | FoodRecord, DrinkRecord, history, ratings, and visibility |
-| `group` | Trusted groups, invitations, memberships, roles, and feeds |
-| `wanttotry` | Saved authorised references the user wants to try |
-| `search` | Permission-aware PostgreSQL search |
-| `recommendation` | Sessions, candidates, hard filters, orchestration, and feedback |
-| `cooking` | Cooking-plan request validation, orchestration, and persistence |
-| `chat` | Chat sessions, messages, and authorised source references |
-| `analytics` | Shared metric definitions, dashboards, and weekly recap queries |
+| API base | `http://localhost:8080/api/v1` |
+| OpenAPI JSON | `http://localhost:8080/v3/api-docs` |
+| Swagger UI | `http://localhost:8080/swagger-ui.html` |
+| Readiness probe | `http://localhost:8080/actuator/health/readiness` |
 
-Package boundaries should be enforced through public application interfaces. A module must not reach into another module's persistence implementation.
+Private AI services are optional for basic CRUD development. Start the complete local dependency stack from [FoodMind Infrastructure](https://github.com/foodmind-team/foodmind-infra) when testing recommendation, cooking, or chat flows end to end.
 
-## Public API
+## Configuration
 
-The canonical client-facing API is versioned under `/api/v1`.
+Copy `.env.example` rather than committing credentials. The important local settings are:
 
-Planned endpoint groups include:
+| Variable | Purpose |
+| --- | --- |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL connection |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | Local token configuration |
+| `WEB_ALLOWED_ORIGINS`, `WEB_COOKIE_SECURE` | Browser CORS and refresh-cookie behaviour |
+| `*_AGENT_BASE_URL`, `*_AGENT_SERVICE_TOKEN` | Server-to-server private Agent calls |
+| `MEDIA_*` | Optional MinIO/S3 media support |
+| `ONEMAP_*` | Optional OneMap walking-route integration |
 
-- `/auth`
-- `/users/me`
-- `/users/me/preferences`
-- `/food-records`
-- `/drink-records`
-- `/history`
-- `/groups`
-- permission-aware group-feed/search endpoints used to compose Explore
-- `/want-to-try`
-- `/recommendations`
-- `/cooking-plans`
-- `/chat`
-- `/dashboard`
-- `/weekly-recaps`
+The sample values are local-only placeholders. Never use them outside development, and never commit a populated `.env` file.
 
-The committed OpenAPI document under `src/main/resources/openapi/` will be the source consumed by Android and Web. See [API conventions](docs/api/conventions.md).
+## API contract
 
-## Internal Integrations
+The canonical public OpenAPI document is [`src/main/resources/openapi/openapi.yaml`](src/main/resources/openapi/openapi.yaml). Web and Android keep versioned snapshots of this contract. For a public API change, update the implementation, OpenAPI description, examples, and consumer snapshots together.
 
-Internal endpoints and clients are not part of the public client contract.
-
-- Backend to Agent: structured request containing authorised context and trace metadata
-- Agent to inference service: structured feature/inference request
-- Backend to storage: optional image-object operations
-- Agent to Backend: narrow allow-listed tools for authorised search and content resolution
-
-Every internal call must define:
-
-- Authentication mechanism
-- Request and response schema version
-- Timeout and retry policy
-- Correlation ID propagation
-- Invalid-output handling
-- Deterministic fallback behaviour
-
-## Local Development
-
-Validate the committed public contract without downloading tooling:
+## Verify
 
 ```bash
 python3 scripts/validate-openapi.py
+python3 scripts/check-secrets.py
+./mvnw -B --no-transfer-progress clean verify
 ```
 
-The contract was also smoke-generated with OpenAPI Generator 7.24.0 into a
-temporary directory using `typescript-fetch` and Kotlin `jvm-retrofit2`, and with
-Orval 7.13.2 using `fetch`; the generated TypeScript compiled independently.
-Generated clients are disposable and must not be imported directly by UI code.
+Tests use disposable PostgreSQL containers where integration coverage requires a database. Docker must be available for those tests.
 
-Prerequisites:
+## Repository layout
 
-- Java 17
-- PostgreSQL
-- Docker Desktop, recommended for local dependencies
-- Maven Wrapper prerequisites
-
-Typical commands:
-
-```powershell
-.\mvnw.cmd test
-.\mvnw.cmd spring-boot:run
+```text
+src/main/java/.../     Domain modules, HTTP API, security, and integrations
+src/main/resources/    Configuration, Flyway migrations, OpenAPI, and seed data
+src/test/              Unit, contract, architecture, and integration tests
+docs/                  API, architecture, database, and operations documentation
+postman/               Importable API collection and environment guidance
+compose.yaml           Local PostgreSQL and MinIO dependencies
 ```
 
-```bash
-./mvnw test
-./mvnw spring-boot:run
-```
+## Contributing
 
-Use the committed `compose.yaml` PostgreSQL service and
-[local-development.md](docs/operations/local-development.md) for the local
-profile, database, and client startup contract.
+Keep a change within its owning module, use parameterised persistence APIs, and add behavioural and permission tests. Public contract changes must be backward-compatible unless an approved migration plan says otherwise. Before opening a pull request, run the applicable verification commands above and inspect `git diff --check`.
 
-## Configuration Contract
+## Security
 
-Secret values must be supplied by the environment and must never be committed.
+Do not add credentials, JWTs, personal data, or real prompts to source control or logs. Authorisation belongs on the server: client-side visibility is never a substitute for an ownership or active-group-membership check.
 
-| Environment variable | Purpose |
-| --- | --- |
-| `SPRING_PROFILES_ACTIVE` | Select `local`, `test`, `staging`, or `production-demo` |
-| `DB_URL` | PostgreSQL JDBC URL |
-| `DB_USERNAME` | Least-privilege database user |
-| `DB_PASSWORD` | Database password |
-| `JWT_SECRET` | JWT signing secret |
-| `AGENT_SERVICE_BASE_URL` | Private Agent-service base URL |
-| `AGENT_SERVICE_TOKEN` | Internal service credential |
-| `COOKING_AGENT_ENABLED` | Enables Cooking Plan and recipe-import Agent calls |
-| `COOKING_AGENT_BASE_URL` | Private Cooking Agent base URL |
-| `COOKING_AGENT_SERVICE_TOKEN` | Credential shared only with the Cooking Agent |
-| `COOKING_TASK_POLL_ENABLED` | Enables Backend materialisation of asynchronous Cooking Agent tasks |
-| `COOKING_TASK_POLL_INTERVAL` | Agent task status polling interval (defaults to `2s`) |
-| `INFERENCE_SERVICE_BASE_URL` | Private inference-service base URL |
-| `INFERENCE_SERVICE_TOKEN` | Internal service credential |
-| `S3_BUCKET` | Optional image bucket |
-| `AWS_REGION` | AWS region for managed services |
+## License
 
-The names above define the intended cross-environment contract. Application bindings must be documented when implemented.
-
-## Testing Strategy
-
-- Unit tests for domain rules and application services
-- MockMvc tests for HTTP contracts and validation
-- PostgreSQL integration tests with Testcontainers
-- Permission tests for ownership and active group membership
-- Contract tests for Agent and inference clients
-- Timeout, invalid-response, and fallback tests
-- Architecture tests for module boundaries
-- Migration tests starting from an empty database
-
-Tests must not require production credentials or unrestricted network access.
-
-## Security Rules
-
-- Authorisation is checked for every resource read and write.
-- Group visibility requires active membership at request time.
-- Search and Chatbot source resolution reuse the same permission policy.
-- Agents receive authorised data or use narrow authorised tools; they do not access PostgreSQL.
-- Logs must not contain passwords, JWTs, dietary-sensitive data, or full prompt content.
-- Internal-service URLs and credentials remain server-side.
-- Validation errors may identify fields but must not expose stack traces.
-
-## Contribution Workflow
-
-1. Create or reference an Issue with acceptance criteria.
-2. Branch from the repository's protected default branch.
-3. Keep changes inside the owning module.
-4. Update OpenAPI before or with a public contract change.
-5. Add tests for behaviour, permissions, and failures.
-6. Run the full relevant test suite.
-7. Open a Pull Request and obtain review.
-8. Prefer squash merge after required checks pass.
-
-Do not copy implementation code from another FoodMind repository. Coordinate through versioned contracts, examples, and test fixtures.
-
-## Further Reading
-
-- [Backend architecture](docs/architecture/overview.md)
-- [Backend architecture, database design, and development plan](docs/architecture/backend-development-plan.md)
-- [Ordered feature-branch delivery roadmap](docs/planning/backend-branch-roadmap.md)
-- [Feature-branch implementation hand-offs](docs/planning/branches/README.md)
-- [PostgreSQL V1–V11 schema guide](docs/database/postgresql-schema-guide.md)
-- [Postman collection and environment guide](postman/README.md)
-- [API conventions](docs/api/conventions.md)
-- [Local development](docs/operations/local-development.md)
+No open-source license is currently included in this repository. Obtain permission from the maintainers before redistributing or reusing the code.
