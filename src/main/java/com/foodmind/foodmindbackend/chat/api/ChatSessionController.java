@@ -37,6 +37,7 @@ public class ChatSessionController {
     private final ChatSessionService chatSessionService;
 
     public ChatSessionController(ChatSessionService chatSessionService) {
+
         this.chatSessionService = chatSessionService;
     }
 
