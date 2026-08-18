@@ -55,7 +55,8 @@ class SecurityConfiguration {
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
-                                "/api/v1/auth/refresh").permitAll()
+                                "/api/v1/auth/refresh",
+                                "/api/v1/catalogue-images/**").permitAll()
                         .requestMatchers("/api/v1/**").authenticated()
                         .requestMatchers("/internal/v1/**").hasAuthority("SERVICE")
                         .anyRequest().denyAll())

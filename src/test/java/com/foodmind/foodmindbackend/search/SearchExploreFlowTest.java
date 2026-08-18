@@ -115,6 +115,19 @@ class SearchExploreFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void curatedImagesArePublicAndCannotBeCachedStale() throws Exception {
+        mockMvc.perform(get("/api/v1/catalogue-images/{sourceId}", PLACE_ID))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .contentTypeCompatibleWith(MediaType.IMAGE_JPEG))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        mockMvc.perform(get("/api/v1/catalogue-images/{sourceId}", "00000000-0000-4000-8000-000000000099"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void searchValidatesBoundsUsesAllowListAndKeepsInputParameterized() throws Exception {
         String accessToken = read(register("search-validation@example.test", "Search Validation"), "$.accessToken");
 

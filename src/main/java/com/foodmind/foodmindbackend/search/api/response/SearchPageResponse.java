@@ -1,6 +1,8 @@
 package com.foodmind.foodmindbackend.search.api.response;
 
+import com.foodmind.foodmindbackend.catalog.api.CuratedCatalogueImage;
 import com.foodmind.foodmindbackend.search.domain.SearchPage;
+import com.foodmind.foodmindbackend.search.domain.SearchDocument;
 import java.util.List;
 import java.util.function.Function;
 
@@ -15,8 +17,15 @@ public record SearchPageResponse(List<SearchResultResponse> items, String nextCu
 
     public static SearchPageResponse from(SearchPage page, Function<String, String> imageResolver) {
         return new SearchPageResponse(
-                page.items().stream().map(item -> SearchResultResponse.from(item, imageResolver.apply(item.imageObjectKey()))).toList(),
+                page.items().stream().map(item -> SearchResultResponse.from(item, imageReference(item, imageResolver))).toList(),
                 page.nextCursor(),
                 page.hasNext());
+    }
+
+    private static String imageReference(SearchDocument item, Function<String, String> imageResolver) {
+        if (item.imageObjectKey() != null && !item.imageObjectKey().isBlank()) {
+            return imageResolver.apply(item.imageObjectKey());
+        }
+        return CuratedCatalogueImage.referenceFor(item.sourceId());
     }
 }
