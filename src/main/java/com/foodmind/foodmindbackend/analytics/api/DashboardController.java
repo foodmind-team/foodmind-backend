@@ -29,9 +29,10 @@ public class DashboardController {
         this.getDashboard = getDashboard;
     }
 
+    // return statistic data
     @GetMapping
     public DashboardResponse get(
-            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @AuthenticationPrincipal FoodMindPrincipal principal,  // 当前用户
             @RequestParam String from,
             @RequestParam String to,
             @RequestParam(defaultValue = "DAY") DashboardGroupBy groupBy,

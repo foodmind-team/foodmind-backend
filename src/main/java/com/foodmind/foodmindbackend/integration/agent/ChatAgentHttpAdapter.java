@@ -56,6 +56,7 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
 
     @Override
     public ChatAgentGenerationResult generate(ChatAgentCommand command) {
+        // Treat the remote agent as optional at runtime: a failed call falls back to a safe local response.
         if (!properties.isEnabled()) {
             return fallback(command);
         }
@@ -131,6 +132,7 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
     }
 
     private ChatAgentGenerationResult fallback(ChatAgentCommand command) {
+        // Fallback responses keep the chat usable when the agent is unavailable or returns invalid output.
         List<ChatReference> available = command.sharedReferences().stream()
                 .filter(ChatReference::available)
                 .limit(3)

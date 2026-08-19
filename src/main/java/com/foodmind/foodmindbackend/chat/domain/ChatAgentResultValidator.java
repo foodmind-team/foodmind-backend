@@ -35,6 +35,7 @@ public class ChatAgentResultValidator {
             UUID userMessageId,
             String traceId,
             ChatAgentGenerationResult result) {
+        // Reject anything that breaks the agent contract before it can reach persistence or the API response.
         if (result == null || !result.successful()) {
             throw new ChatAgentValidationException("Agent did not return a successful result.");
         }
@@ -83,6 +84,7 @@ public class ChatAgentResultValidator {
         Set<String> seen = new HashSet<>();
         int expectedSequence = 1;
         for (ChatAgentSourceResult source : result.sources()) {
+            // Sources must be complete, ordered, and unique so the UI can render deterministic grounding.
             if (source.sourceType() == null || source.sourceId() == null) {
                 throw new ChatAgentValidationException("Agent cited an incomplete source.");
             }

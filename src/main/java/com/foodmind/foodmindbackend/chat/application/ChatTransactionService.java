@@ -38,6 +38,7 @@ public class ChatTransactionService {
             String content,
             UUID correlationId,
             UUID idempotencyRecordId) {
+        // Store the user message first so the agent result can be attached to a durable conversation record.
         UUID userMessageId = chatRepository.insertUserMessage(userId, sessionId, content, correlationId);
         if (idempotencyRecordId != null) {
             idempotencyService.associateResource(idempotencyRecordId, userMessageId);
@@ -61,6 +62,7 @@ public class ChatTransactionService {
             UUID userMessageId,
             ValidatedChatAgentResult result,
             UUID idempotencyRecordId) {
+        // Persist the assistant reply only after validation has proven the response is safe to expose.
         ChatMessage stored = chatRepository.insertAssistantMessage(userId, sessionId, userMessageId, result);
         completeIdempotency(idempotencyRecordId, stored.id());
         return stored.withSuggestions(result.suggestedQuestions(), result.suggestedDestinations());

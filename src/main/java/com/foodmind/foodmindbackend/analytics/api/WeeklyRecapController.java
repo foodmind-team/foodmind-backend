@@ -26,6 +26,8 @@ public class WeeklyRecapController {
         this.getWeeklyRecap = getWeeklyRecap;
     }
 
+
+
     @GetMapping("/{weekStart}")
     public WeeklyRecapResponse get(
             @AuthenticationPrincipal FoodMindPrincipal principal,

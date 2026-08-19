@@ -98,8 +98,11 @@ public class GenerateCookingPlan {
         // embeds a per-call trace id) so retries with the same key reproduce the same hash.
         String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
         return generateAndPersist(userId, agentRequest,
-                assembler.recipeInputs(candidates, request.servings()), traceId,
-                OPERATION, idempotencyKey, requestHashSeed);
+                assembler.recipeInputs(candidates, request.servings()),
+                traceId,
+                OPERATION,
+                idempotencyKey,
+                requestHashSeed);
     }
 
     /**

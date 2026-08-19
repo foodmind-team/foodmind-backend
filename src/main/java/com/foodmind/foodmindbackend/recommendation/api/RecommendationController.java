@@ -52,6 +52,7 @@ public class RecommendationController {
             @AuthenticationPrincipal FoodMindPrincipal principal,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody GenerateRecommendationRequest request) {
+        // The idempotency key ensures repeated taps do not create duplicate recommendation sessions.
         RecommendationResponse response = RecommendationResponse.from(
                 generateRecommendation.handle(principal.id(), request.toContext(), idempotencyKey));
         return ResponseEntity.created(URI.create("/api/v1/recommendations/" + response.sessionId()))

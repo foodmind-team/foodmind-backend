@@ -117,6 +117,7 @@ public class ChatMessageService {
             Boolean useSessionReferences,
             String route,
             String idempotencyKey) {
+        // This method owns the full chat write path: validate input, resolve references, call the agent, then persist.
         String safeContent = validateContent(content);
         ChatRoute requestedRoute = validateRequestedRoute(route);
         List<UUID> requestedReferenceIds = validateReferenceIds(referenceIds);
@@ -193,6 +194,7 @@ public class ChatMessageService {
         UUID idempotencyRecordId = idempotency == null ? null : idempotency.record().id();
         ChatMessage assistantMessage;
         try {
+            // Only successful, validated agent output is allowed to complete the assistant message.
             ValidatedChatAgentResult validated = validator.validate(
                     command.requestId(),
                     sessionId,
@@ -341,6 +343,7 @@ public class ChatMessageService {
     }
 
     private ChatAgentGenerationResult invokeAgentOutsideTransaction(ChatAgentCommand command) {
+        // The remote agent call is measured separately so transaction time does not hide upstream latency.
         Timer.Sample sample = Timer.start(meterRegistry);
         ChatAgentGenerationResult result = chatAgentPort.generate(command);
         String status = result.successful() ? "SUCCESS" : result.failureCode().name();

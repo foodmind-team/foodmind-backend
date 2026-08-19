@@ -52,6 +52,7 @@ public class CatalogueService {
 
     public WalkingRoute walkingRoute(UUID id, BigDecimal latitude, BigDecimal longitude) {
         PlaceDetail destination = place(id);
+        // Keep the routing call behind a null check so unsupported places fail with a clear upstream error.
         if (destination.coordinates() == null) throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "Walking directions are unavailable for this place.");
         return oneMapRoutingClient.walkingRoute(new GeoPoint(latitude, longitude), destination.coordinates());
     }

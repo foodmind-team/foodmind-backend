@@ -82,7 +82,9 @@ public class UserRecipeController {
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
-    private String etag(long version) { return "\"" + version + "\""; }
+    private String etag(long version) {
+        return "\"" + version + "\"";
+    }
     private long expectedVersion(String value) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.startsWith("\"") && normalized.endsWith("\"")) normalized = normalized.substring(1, normalized.length() - 1);
