@@ -456,7 +456,16 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                        cp.makespan_minutes,
                        (SELECT count(*)::int FROM cooking_plan_source cps WHERE cps.plan_id = cp.id) AS source_count,
                        (SELECT count(*)::int FROM cooking_plan_task cpt WHERE cpt.plan_id = cp.id) AS task_count,
-                       (SELECT count(*)::int FROM cooking_plan_execution_step ces WHERE ces.plan_id = cp.id AND ces.status = 'COMPLETED') AS completed_step_count,
+                       (SELECT count(*)::int
+                        FROM cooking_plan_execution_step ces
+                        WHERE ces.plan_id = cp.id
+                          AND ces.status = 'COMPLETED'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM cooking_plan_task cpt
+                              WHERE cpt.plan_id = cp.id
+                                AND cpt.task_id = ces.step_id
+                          )) AS completed_step_count,
                        COALESCE((SELECT array_agg(cps.dish_name ORDER BY cps.sequence_no) FROM cooking_plan_source cps WHERE cps.plan_id = cp.id), ARRAY[]::varchar[]) AS dish_names,
                        cp.created_at,
                        cp.completed_at,

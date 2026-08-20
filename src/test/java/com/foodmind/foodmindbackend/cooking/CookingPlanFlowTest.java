@@ -253,6 +253,24 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                                 """))
                 .andExpect(status().isConflict());
 
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"IN_PROGRESS","expectedVersion":3}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(4));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"COMPLETED","expectedVersion":4}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(5));
+
         mockMvc.perform(get("/api/v1/cooking-plans/saved")
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
                 .andExpect(status().isOk())
