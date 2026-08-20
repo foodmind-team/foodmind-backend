@@ -1,6 +1,7 @@
 package com.foodmind.foodmindbackend.chat;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -160,6 +161,55 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void resolvedReferencesKeepStructuredGroundingWhenOptionalTextIsMissing() throws Exception {
+        String ownerToken = read(register("chat-grounding-owner@example.test", "Chat Grounding Owner"), "$.accessToken");
+        String ownerUserId = jdbcTemplate.queryForObject(
+                "SELECT id::text FROM app_user WHERE email = 'chat-grounding-owner@example.test'", String.class);
+        String sessionId = createSession(ownerToken, "Grounding snippets");
+        String recordId = createFoodRecord(ownerToken, "Grounding chicken rice", "PRIVATE", null);
+        jdbcTemplate.update("""
+                UPDATE food_record
+                SET comment = NULL, price = 12.50, currency = 'SGD', rating = 4.5, would_eat_again = TRUE
+                WHERE id = CAST(? AS uuid)
+                """, recordId);
+        jdbcTemplate.update("UPDATE food_product SET description = NULL WHERE id = CAST(? AS uuid)", PRODUCT_ID);
+
+        String recordReferenceId = shareReference(ownerToken, sessionId, "FOOD_RECORD", recordId);
+        String productReferenceId = shareReference(ownerToken, sessionId, "FOOD_PRODUCT", PRODUCT_ID);
+        String placeReferenceId = shareReference(ownerToken, sessionId, "PLACE", PLACE_ID);
+        String delegation = delegationTokenIssuer.issue(
+                        UUID.fromString(ownerUserId),
+                        "chat-grounding-trace",
+                        List.of(DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE),
+                        List.of(
+                                UUID.fromString(recordReferenceId),
+                                UUID.fromString(productReferenceId),
+                                UUID.fromString(placeReferenceId)))
+                .token();
+
+        mockMvc.perform(post("/internal/v1/references/resolve")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer(delegation))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sessionId": "%s",
+                                  "referenceIds": ["%s", "%s", "%s"]
+                                }
+                                """.formatted(sessionId, recordReferenceId, productReferenceId, placeReferenceId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sourceType").value("FOOD_RECORD"))
+                .andExpect(jsonPath("$[0].snippet", containsString("at Orchard Garden Kitchen")))
+                .andExpect(jsonPath("$[0].snippet", containsString("price 12.50 SGD")))
+                .andExpect(jsonPath("$[0].snippet", containsString("rating 4.5/5")))
+                .andExpect(jsonPath("$[1].sourceType").value("FOOD_PRODUCT"))
+                .andExpect(jsonPath("$[1].snippet", containsString("brand FoodMind Demo")))
+                .andExpect(jsonPath("$[2].sourceType").value("PLACE"))
+                .andExpect(jsonPath("$[2].snippet", containsString("type CASUAL_DINING")))
+                .andExpect(jsonPath("$[2].snippet", containsString("address FoodMind synthetic demo listing, Orchard area")));
+    }
+
+    @Test
     void internalToolsRequireServiceIdentityDelegationAndLiveReferenceAuthorization() throws Exception {
         String ownerToken = read(register("chat-tool-owner@example.test", "Tool Owner"), "$.accessToken");
         String memberToken = read(register("chat-tool-member@example.test", "Tool Member"), "$.accessToken");
@@ -297,6 +347,20 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"%s\"}".formatted(title)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
+    }
+
+    private String shareReference(String accessToken, String sessionId, String sourceType, String sourceId) throws Exception {
+        return read(mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/references", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceType": "%s",
+                                  "sourceId": "%s"
+                                }
+                                """.formatted(sourceType, sourceId)))
                 .andExpect(status().isCreated())
                 .andReturn(), "$.id");
     }

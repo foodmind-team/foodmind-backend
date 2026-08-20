@@ -354,7 +354,20 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'FOOD_RECORD' AS source_type,
                        record.id AS source_id,
                        record.meal_name_snapshot AS title,
-                       left(coalesce(record.comment, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(record.place_name_snapshot), '') is not null
+                               then 'at ' || btrim(record.place_name_snapshot) end,
+                           case when record.occurred_at is not null
+                               then 'occurred at ' || record.occurred_at::text end,
+                           case when record.price is not null
+                               then concat_ws(' ', 'price', record.price::text, nullif(btrim(record.currency), '')) end,
+                           case when record.rating is not null
+                               then 'rating ' || record.rating::text || '/5' end,
+                           case when record.would_eat_again is not null
+                               then 'would_eat_again=' || record.would_eat_again::text end,
+                           case when nullif(btrim(record.comment), '') is not null
+                               then 'comment: ' || btrim(record.comment) end
+                       ), ''), record.meal_name_snapshot), 4000) AS snippet
                 FROM food_record record
                 LEFT JOIN trusted_group trusted_group ON trusted_group.id = record.group_id
                 WHERE record.id = :sourceId
@@ -387,8 +400,18 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'FOOD_PRODUCT' AS source_type,
                        product.id AS source_id,
                        product.name AS title,
-                       left(coalesce(product.description, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(product.brand), '') is not null
+                               then 'brand ' || btrim(product.brand) end,
+                           case when nullif(btrim(product.description), '') is not null
+                               then 'description: ' || btrim(product.description) end,
+                           case when product.price is not null
+                               then concat_ws(' ', 'price', product.price::text, nullif(btrim(product.currency), '')) end,
+                           case when nullif(btrim(place.name), '') is not null
+                               then 'place ' || btrim(place.name) end
+                       ), ''), product.name), 4000) AS snippet
                 FROM food_product product
+                LEFT JOIN place place ON place.id = product.place_id
                 WHERE product.id = :sourceId
                   AND product.curation_status = 'ACTIVE'
                 """,
@@ -403,7 +426,16 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'PLACE' AS source_type,
                        place.id AS source_id,
                        place.name AS title,
-                       left(coalesce(place.area, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(place.place_type), '') is not null
+                               then 'type ' || btrim(place.place_type) end,
+                           case when nullif(btrim(place.area), '') is not null
+                               then 'area ' || btrim(place.area) end,
+                           case when nullif(btrim(place.address_text), '') is not null
+                               then 'address ' || btrim(place.address_text) end,
+                           case when place.price_band is not null
+                               then 'price band ' || place.price_band::text end
+                       ), ''), place.name), 4000) AS snippet
                 FROM place
                 WHERE place.id = :sourceId
                   AND place.curation_status = 'ACTIVE'
