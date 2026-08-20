@@ -84,7 +84,7 @@ public class DrinkRecordController {
         DrinkRecord record = createDrinkRecord.handle(principal.id(), request.toCommand());
         return ResponseEntity.created(URI.create("/api/v1/drink-records/" + record.id()))
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @GetMapping("/{id}")
@@ -94,7 +94,7 @@ public class DrinkRecordController {
         DrinkRecord record = getDrinkRecord.handle(principal.id(), id);
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @GetMapping
@@ -121,7 +121,8 @@ public class DrinkRecordController {
                 sort,
                 page,
                 size));
-        return PageResponse.of(result.items().stream().map(this::response).toList(), page, size, result.totalItems());
+        return PageResponse.of(result.items().stream().map(record -> response(record, principal.id())).toList(), page, size,
+                result.totalItems());
     }
 
     @PatchMapping("/{id}")
@@ -133,7 +134,7 @@ public class DrinkRecordController {
         DrinkRecord record = updateDrinkRecord.handle(principal.id(), id, expectedVersion(ifMatch), request.toCommand());
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @DeleteMapping("/{id}")
@@ -144,8 +145,9 @@ public class DrinkRecordController {
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
-    private DrinkRecordResponse response(DrinkRecord record) {
-        return DrinkRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()));
+    private DrinkRecordResponse response(DrinkRecord record, UUID actorUserId) {
+        return DrinkRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()),
+                record.ownerUserId().equals(actorUserId));
     }
 
     private String etag(long version) {

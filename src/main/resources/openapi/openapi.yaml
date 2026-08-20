@@ -1069,6 +1069,7 @@ components:
         - mealNameSnapshot
         - occurredAt
         - visibility
+        - canManage
         - createdAt
         - updatedAt
         - version
@@ -1139,6 +1140,9 @@ components:
           format: uri
           nullable: true
           description: Short-lived authorized image URL; null when media is disabled or unavailable.
+        canManage:
+          type: boolean
+          description: True only when the current user owns the record and may edit or delete it and its media.
         createdAt:
           type: string
           format: date-time
@@ -1249,6 +1253,7 @@ components:
         - shopNameSnapshot
         - occurredAt
         - visibility
+        - canManage
         - createdAt
         - updatedAt
         - version
@@ -1312,6 +1317,9 @@ components:
           format: uri
           nullable: true
           description: Short-lived authorized image URL; null when media is disabled or unavailable.
+        canManage:
+          type: boolean
+          description: True only when the current user owns the record and may edit or delete it and its media.
         createdAt:
           type: string
           format: date-time
