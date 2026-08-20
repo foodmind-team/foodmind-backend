@@ -2,6 +2,10 @@
 
 FoodMind Backend is the public business API and system of record for FoodMind. It is the only service called by the Web and Android clients; private Agent and inference services are reached through this API, never directly from a client.
 
+## Live deployment
+
+The deployed FoodMind application is available at [https://13.229.2.154.sslip.io/](https://13.229.2.154.sslip.io/). The browser client uses the same HTTPS origin and reaches this Backend through `/api/v1`; private Agent and inference endpoints are not exposed publicly.
+
 ## What it provides
 
 - Account authentication, profiles, preferences, and permission enforcement
