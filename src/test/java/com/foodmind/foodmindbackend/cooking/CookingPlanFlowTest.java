@@ -2,8 +2,10 @@ package com.foodmind.foodmindbackend.cooking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -172,6 +174,98 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         assertThat(AGENT_CALL_COUNT).hasValue(1);
         Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
         assertThat(planCount).isEqualTo(1);
+    }
+
+    @Test
+    void equivalentUnfinishedPlanIsReturnedDirectlyWithoutAnotherAgentCall() throws Exception {
+        String accessToken = read(register("cooking-resume@example.test", "Cooking Resume"), "$.accessToken");
+        AGENT_RESPONSE.set(request -> {
+            AgentReadyPlanResponse ready = readyPlan(request.requestId());
+            return CookingAgentResult.of(ready, json(ready));
+        });
+
+        MvcResult first = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-resume-first")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String planId = read(first, "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-resume-second")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.planId").value(planId))
+                .andExpect(jsonPath("$.reusedFromPlanId").isEmpty());
+
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class)).isEqualTo(1);
+    }
+
+    @Test
+    void savedPlanAndExecutionProgressSynchroniseWithOptimisticConcurrency() throws Exception {
+        String accessToken = read(register("cooking-saved@example.test", "Cooking Saved"), "$.accessToken");
+        MvcResult generated = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-saved-root")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String planId = read(generated, "$.planId");
+
+        mockMvc.perform(put("/api/v1/cooking-plans/{planId}/saved", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.savedAt").isNotEmpty())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.steps").isEmpty());
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"t-1","status":"IN_PROGRESS","expectedVersion":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.steps[0].status").value("IN_PROGRESS"));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"t-1","status":"COMPLETED","expectedVersion":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.steps[0].status").value("COMPLETED"));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"IN_PROGRESS","expectedVersion":1}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(get("/api/v1/cooking-plans/saved")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].planId").value(planId))
+                .andExpect(jsonPath("$.items[0].completedStepCount").value(1))
+                .andExpect(jsonPath("$.items[0].dishNames[0]").value("Ginger Tofu Rice Bowl"));
+
+        mockMvc.perform(delete("/api/v1/cooking-plans/{planId}/saved", planId)
+                        .queryParam("resetProgress", "true")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.savedAt").isEmpty())
+                .andExpect(jsonPath("$.steps").isEmpty());
     }
 
     @Test

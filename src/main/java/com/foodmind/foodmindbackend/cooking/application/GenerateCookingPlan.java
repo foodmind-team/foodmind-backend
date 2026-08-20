@@ -284,6 +284,13 @@ public class GenerateCookingPlan {
         Optional<CookingPlanRepository.ReusableReadyPlan> reusable = reusablePlan(userId, requestFingerprint);
         if (reusable.isPresent()) {
             CookingPlanRepository.ReusableReadyPlan source = reusable.get();
+            if (source.finishedAt() == null) {
+                CookingPlanResult result = planRepository.findOwned(userId, source.planId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+                idempotencyService.complete(
+                        idempotency.id(), source.planId(), 200, toJson(CookingPlanResponse.from(result)));
+                return AsyncSubmitResult.resolvedPlan(result);
+            }
             UUID reusedPlanId = planRepository.createReusedReady(
                     userId, agentRequest, sources, traceId, toJson(agentRequest),
                     requestFingerprint, source.planId(), parseReadyResponse(source.responseJson()));
@@ -357,6 +364,12 @@ public class GenerateCookingPlan {
         Optional<CookingPlanRepository.ReusableReadyPlan> reusable = reusablePlan(userId, requestFingerprint);
         if (reusable.isPresent()) {
             CookingPlanRepository.ReusableReadyPlan source = reusable.get();
+            if (source.finishedAt() == null) {
+                CookingPlanResult result = planRepository.findOwned(userId, source.planId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+                idempotencyService.complete(idempotency.id(), source.planId(), 201, toJson(result));
+                return result;
+            }
             UUID reusedPlanId = planRepository.createReusedReady(
                     userId, agentRequest, sources, traceId, toJson(agentRequest),
                     requestFingerprint, source.planId(), parseReadyResponse(source.responseJson()));

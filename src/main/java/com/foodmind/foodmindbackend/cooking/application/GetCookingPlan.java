@@ -33,4 +33,8 @@ public class GetCookingPlan {
     public PageResponse<CookingPlanSummary> history(UUID userId, int page, int size) {
         return PageResponse.of(planRepository.findOwnedPage(userId, page, size), page, size, planRepository.countOwned(userId));
     }
+
+    public PageResponse<CookingPlanSummary> saved(UUID userId, int page, int size) {
+        return PageResponse.of(planRepository.findSavedPage(userId, page, size), page, size, planRepository.countSaved(userId));
+    }
 }

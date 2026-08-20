@@ -2,6 +2,7 @@ package com.foodmind.foodmindbackend.cooking.application.port;
 
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanResult;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary;
+import com.foodmind.foodmindbackend.cooking.domain.CookingPlanExecution;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
@@ -76,6 +77,18 @@ public interface CookingPlanRepository {
 
     long countOwned(UUID userId);
 
+    List<CookingPlanSummary> findSavedPage(UUID userId, int page, int size);
+
+    long countSaved(UUID userId);
+
+    Optional<CookingPlanExecution> findExecution(UUID userId, UUID planId);
+
+    void setSaved(UUID userId, UUID planId, boolean saved, boolean resetProgress);
+
+    void updateExecutionStep(UUID userId, UUID planId, String stepId, String status, long expectedVersion);
+
+    void resetExecution(UUID userId, UUID planId, long expectedVersion);
+
     // =========================================================================
     // Async task polling (V15 cooking_plan_generation)
     // =========================================================================
@@ -123,6 +136,6 @@ public interface CookingPlanRepository {
     record PlanLineage(UUID planId, UUID parentPlanId, UUID rootPlanId) {
     }
 
-    record ReusableReadyPlan(UUID planId, String responseJson) {
+    record ReusableReadyPlan(UUID planId, String responseJson, OffsetDateTime finishedAt) {
     }
 }
