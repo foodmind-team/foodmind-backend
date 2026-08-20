@@ -37,7 +37,7 @@ public record PageResponse<T>(
 
     public static <T> PageResponse<T> of(List<T> items, int page, int size, long totalItems) {
         int totalPages = totalItems == 0 ? 0 : (int) Math.ceil((double) totalItems / size);
-        boolean hasNext = page + 1 < totalPages;
+        boolean hasNext = page < totalPages - 1;
         return new PageResponse<>(items, page, size, totalItems, totalPages, hasNext);
     }
 }

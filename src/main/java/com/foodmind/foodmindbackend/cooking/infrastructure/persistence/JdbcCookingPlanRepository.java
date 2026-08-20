@@ -480,7 +480,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 new MapSqlParameterSource()
                         .addValue("userId", userId)
                         .addValue("limit", size)
-                        .addValue("offset", page * size),
+                        .addValue("offset", Math.multiplyExact((long) page, (long) size)),
                 this::summaryRow);
     }
 

@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.cooking.application.CookingTaskPollingCoordinator;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentCompletionItem;
@@ -148,6 +149,20 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.items[0].status").value("READY"))
                 .andExpect(jsonPath("$.items[0].sourceCount").isNumber())
                 .andExpect(jsonPath("$.items[0].taskCount").value(1));
+    }
+
+    @Test
+    void largePageIndexDoesNotOverflowDatabaseOffset() throws Exception {
+        String accessToken = read(register("cooking-large-page@example.test", "Cooking Large Page"), "$.accessToken");
+
+        mockMvc.perform(get("/api/v1/cooking-plans/history")
+                        .queryParam("page", Integer.toString(Integer.MAX_VALUE))
+                        .queryParam("size", Integer.toString(PageResponse.MAX_PAGE_SIZE))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(Integer.MAX_VALUE))
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.hasNext").value(false));
     }
 
     @Test
