@@ -3,7 +3,6 @@ package com.foodmind.foodmindbackend.integration.agent;
 import com.foodmind.foodmindbackend.chat.application.port.ChatAgentPort;
 import com.foodmind.foodmindbackend.chat.domain.ChatReference;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentFailureCode;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentGenerationResult;
@@ -110,7 +109,6 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                 response.userMessageId(),
                 response.traceId(),
                 response.agentTraceId(),
-                ChatRoute.valueOf(response.route()),
                 ChatResponseStatus.valueOf(response.responseStatus()),
                 response.answer(),
                 sources(response.sources()),
@@ -145,7 +143,6 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                     command.userMessageId(),
                     command.traceId(),
                     "chat-fallback",
-                    ChatRoute.NAVIGATION,
                     ChatResponseStatus.FALLBACK_SUCCEEDED,
                     "I can help with read-only FoodMind and food-related questions. "
                             + "Tell me whether you want to search your records, understand food information, or open a workflow.",
@@ -163,7 +160,6 @@ public class ChatAgentHttpAdapter implements ChatAgentPort {
                 command.userMessageId(),
                 command.traceId(),
                 "chat-fallback",
-                ChatRoute.SUMMARY,
                 ChatResponseStatus.FALLBACK_SUCCEEDED,
                 "Here is a grounded summary of the shared FoodMind references: "
                         + available.stream().map(ChatReference::title).toList(),

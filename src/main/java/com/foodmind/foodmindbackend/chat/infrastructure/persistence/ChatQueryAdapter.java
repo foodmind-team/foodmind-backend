@@ -9,7 +9,6 @@ import com.foodmind.foodmindbackend.chat.domain.ChatPage;
 import com.foodmind.foodmindbackend.chat.domain.ChatReference;
 import com.foodmind.foodmindbackend.chat.domain.ChatReferenceOrigin;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.ChatSession;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourcePointer;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourceResolution;
@@ -164,11 +163,11 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
         UUID correlationId = messageCorrelation(sessionId, userMessageId);
         jdbcTemplate.update("""
                 INSERT INTO chat_message (
-                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id,
+                    id, session_id, role, content, response_status, correlation_id, agent_trace_id,
                     suggested_questions, suggested_destinations
                 )
                 VALUES (
-                    :id, :sessionId, 'ASSISTANT', :content, :route, :responseStatus, :correlationId, :agentTraceId,
+                    :id, :sessionId, 'ASSISTANT', :content, :responseStatus, :correlationId, :agentTraceId,
                     CAST(:suggestedQuestions AS jsonb), CAST(:suggestedDestinations AS jsonb)
                 )
                 """,
@@ -176,7 +175,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         .addValue("id", assistantMessageId)
                         .addValue("sessionId", sessionId)
                         .addValue("content", result.answer())
-                        .addValue("route", result.route().name())
                         .addValue("responseStatus", result.responseStatus().name())
                         .addValue("correlationId", correlationId)
                         .addValue("agentTraceId", result.agentTraceId())
@@ -211,10 +209,10 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
         UUID correlationId = messageCorrelation(sessionId, userMessageId);
         jdbcTemplate.update("""
                 INSERT INTO chat_message (
-                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id
+                    id, session_id, role, content, response_status, correlation_id, agent_trace_id
                 )
                 VALUES (
-                    :id, :sessionId, 'ASSISTANT', :content, 'OUT_OF_SCOPE', 'FAILED', :correlationId, :agentTraceId
+                    :id, :sessionId, 'ASSISTANT', :content, 'FAILED', :correlationId, :agentTraceId
                 )
                 """,
                 new MapSqlParameterSource()
@@ -236,7 +234,7 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 .addValue("afterCreatedAt", after == null ? null : after.createdAt())
                 .addValue("afterId", after == null ? null : after.id());
         List<ChatMessage> rows = jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                SELECT id, session_id, role, content, response_status, correlation_id, agent_trace_id, created_at,
                        suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
@@ -259,7 +257,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -506,7 +503,7 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
 
     private Optional<ChatMessage> findMessage(UUID sessionId, UUID messageId) {
         return jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                SELECT id, session_id, role, content, response_status, correlation_id, agent_trace_id, created_at,
                        suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
@@ -523,7 +520,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -622,14 +618,12 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
     }
 
     private ChatMessage messageRow(ResultSet rs, int rowNum) throws SQLException {
-        String route = rs.getString("route");
         String responseStatus = rs.getString("response_status");
         return new ChatMessage(
                 rs.getObject("id", UUID.class),
                 rs.getObject("session_id", UUID.class),
                 rs.getString("role"),
                 rs.getString("content"),
-                route == null ? null : ChatRoute.valueOf(route),
                 responseStatus == null ? null : ChatResponseStatus.valueOf(responseStatus),
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("agent_trace_id"),

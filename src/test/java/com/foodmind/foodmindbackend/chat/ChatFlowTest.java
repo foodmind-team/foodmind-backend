@@ -109,7 +109,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .content("{\"content\":\"summarise this product\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.role").value("ASSISTANT"))
-                .andExpect(jsonPath("$.route").value("SUMMARY"))
+                .andExpect(jsonPath("$.route").doesNotExist())
                 .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"))
                 .andExpect(jsonPath("$.sources[*].sourceId", hasItem(PRODUCT_ID)));
 
@@ -308,23 +308,8 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"recommend what I should cook tonight\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.route").value("NAVIGATION"))
+                .andExpect(jsonPath("$.route").doesNotExist())
                 .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"));
-        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "content": "Recommend a new dinner and cook it for me.",
-                                  "route": "RECOMMENDATION"
-                                }
-                                """))
-                .andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"hello\",\"route\":\"OUT_OF_SCOPE\"}"))
-                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test
@@ -337,7 +322,7 @@ class ChatFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"Where can I find my saved food records?\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.route").value("NAVIGATION"))
+                .andExpect(jsonPath("$.route").doesNotExist())
                 .andExpect(jsonPath("$.responseStatus").value("FALLBACK_SUCCEEDED"))
                 .andExpect(jsonPath("$.sources").isEmpty());
     }

@@ -1,7 +1,6 @@
 package com.foodmind.foodmindbackend.chat.domain.agent;
 
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import java.util.List;
 
 /**
@@ -14,7 +13,6 @@ import java.util.List;
 public record ValidatedChatAgentResult(
         String agentContractVersion,
         String agentTraceId,
-        ChatRoute route,
         ChatResponseStatus responseStatus,
         String answer,
         List<ChatAgentSourceResult> sources,
@@ -24,14 +22,12 @@ public record ValidatedChatAgentResult(
     public ValidatedChatAgentResult(
             String agentContractVersion,
             String agentTraceId,
-            ChatRoute route,
             ChatResponseStatus responseStatus,
             String answer,
             List<ChatAgentSourceResult> sources) {
         this(
                 agentContractVersion,
                 agentTraceId,
-                route,
                 responseStatus,
                 answer,
                 sources,

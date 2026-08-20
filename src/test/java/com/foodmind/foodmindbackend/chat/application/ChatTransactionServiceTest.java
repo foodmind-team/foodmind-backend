@@ -8,7 +8,6 @@ import static org.mockito.Mockito.when;
 import com.foodmind.foodmindbackend.chat.application.port.ChatRepository;
 import com.foodmind.foodmindbackend.chat.domain.ChatMessage;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.agent.ValidatedChatAgentResult;
 import com.foodmind.foodmindbackend.common.idempotency.IdempotencyService;
 import java.time.OffsetDateTime;
@@ -37,9 +36,8 @@ class ChatTransactionServiceTest {
         verify(idempotencyService).associateResource(recordId, userMessageId);
 
         ValidatedChatAgentResult result = new ValidatedChatAgentResult(
-                "chat-agent-v1",
+                "chat-agent-v2",
                 "agent-trace",
-                ChatRoute.SUMMARY,
                 ChatResponseStatus.SUCCEEDED,
                 "Tofu is a useful protein source.",
                 List.of(),
@@ -98,7 +96,6 @@ class ChatTransactionServiceTest {
                 sessionId,
                 "ASSISTANT",
                 content,
-                ChatRoute.SUMMARY,
                 status,
                 UUID.randomUUID(),
                 "agent-trace",
