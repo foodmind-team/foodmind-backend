@@ -31,15 +31,12 @@ public record FoodRecordResponse(
         UUID groupId,
         UUID mediaAssetId,
         String imageUrl,
+        boolean canManage,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         Long version) {
 
-    public static FoodRecordResponse from(FoodRecord record) {
-        return from(record, null);
-    }
-
-    public static FoodRecordResponse from(FoodRecord record, String imageUrl) {
+    public static FoodRecordResponse from(FoodRecord record, String imageUrl, boolean canManage) {
         return new FoodRecordResponse(
                 record.id(),
                 record.mealId(),
@@ -58,6 +55,7 @@ public record FoodRecordResponse(
                 record.groupId(),
                 record.mediaAssetId(),
                 imageUrl,
+                canManage,
                 record.createdAt(),
                 record.updatedAt(),
                 record.version());

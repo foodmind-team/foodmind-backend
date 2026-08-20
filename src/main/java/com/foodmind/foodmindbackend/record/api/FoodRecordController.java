@@ -84,7 +84,7 @@ public class FoodRecordController {
         FoodRecord record = createFoodRecord.create(principal.id(), request.toCommand());
         return ResponseEntity.created(URI.create("/api/v1/food-records/" + record.id()))
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @GetMapping("/{id}")
@@ -94,7 +94,7 @@ public class FoodRecordController {
         FoodRecord record = getFoodRecord.get(principal.id(), id);
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @GetMapping
@@ -125,7 +125,8 @@ public class FoodRecordController {
                 sort,
                 page,
                 size));
-        return PageResponse.of(result.items().stream().map(this::response).toList(), page, size, result.totalItems());
+        return PageResponse.of(result.items().stream().map(record -> response(record, principal.id())).toList(), page, size,
+                result.totalItems());
     }
 
     @PatchMapping("/{id}")
@@ -137,7 +138,7 @@ public class FoodRecordController {
         FoodRecord record = updateFoodRecord.update(principal.id(), id, expectedVersion(ifMatch), request.toCommand());
         return ResponseEntity.ok()
                 .eTag(etag(record.version()))
-                .body(response(record));
+                .body(response(record, principal.id()));
     }
 
     @DeleteMapping("/{id}")
@@ -148,8 +149,9 @@ public class FoodRecordController {
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
-    private FoodRecordResponse response(FoodRecord record) {
-        return FoodRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()));
+    private FoodRecordResponse response(FoodRecord record, UUID actorUserId) {
+        return FoodRecordResponse.from(record, mediaReadUrlService.forAuthorisedAsset(record.mediaAssetId()),
+                record.ownerUserId().equals(actorUserId));
     }
 
     private String etag(long version) {

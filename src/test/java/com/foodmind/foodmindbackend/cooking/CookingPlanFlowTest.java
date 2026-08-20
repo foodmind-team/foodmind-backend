@@ -2,11 +2,14 @@ package com.foodmind.foodmindbackend.cooking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.cooking.application.CookingTaskPollingCoordinator;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentCompletionItem;
@@ -149,6 +152,20 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void largePageIndexDoesNotOverflowDatabaseOffset() throws Exception {
+        String accessToken = read(register("cooking-large-page@example.test", "Cooking Large Page"), "$.accessToken");
+
+        mockMvc.perform(get("/api/v1/cooking-plans/history")
+                        .queryParam("page", Integer.toString(Integer.MAX_VALUE))
+                        .queryParam("size", Integer.toString(PageResponse.MAX_PAGE_SIZE))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(Integer.MAX_VALUE))
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
+    @Test
     void replayWithSameIdempotencyKeyReturnsSamePlanWithoutSecondAgentCall() throws Exception {
         String accessToken = read(register("cooking-replay@example.test", "Cooking Replay"), "$.accessToken");
 
@@ -172,6 +189,116 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         assertThat(AGENT_CALL_COUNT).hasValue(1);
         Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
         assertThat(planCount).isEqualTo(1);
+    }
+
+    @Test
+    void equivalentUnfinishedPlanIsReturnedDirectlyWithoutAnotherAgentCall() throws Exception {
+        String accessToken = read(register("cooking-resume@example.test", "Cooking Resume"), "$.accessToken");
+        AGENT_RESPONSE.set(request -> {
+            AgentReadyPlanResponse ready = readyPlan(request.requestId());
+            return CookingAgentResult.of(ready, json(ready));
+        });
+
+        MvcResult first = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-resume-first")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String planId = read(first, "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-resume-second")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.planId").value(planId))
+                .andExpect(jsonPath("$.reusedFromPlanId").isEmpty());
+
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class)).isEqualTo(1);
+    }
+
+    @Test
+    void savedPlanAndExecutionProgressSynchroniseWithOptimisticConcurrency() throws Exception {
+        String accessToken = read(register("cooking-saved@example.test", "Cooking Saved"), "$.accessToken");
+        MvcResult generated = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "cook-saved-root")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String planId = read(generated, "$.planId");
+
+        mockMvc.perform(put("/api/v1/cooking-plans/{planId}/saved", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.savedAt").isNotEmpty())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.steps").isEmpty());
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"t-1","status":"IN_PROGRESS","expectedVersion":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.steps[0].status").value("IN_PROGRESS"));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"t-1","status":"COMPLETED","expectedVersion":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.steps[0].status").value("COMPLETED"));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"IN_PROGRESS","expectedVersion":1}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"IN_PROGRESS","expectedVersion":3}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(4));
+
+        mockMvc.perform(patch("/api/v1/cooking-plans/{planId}/execution", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"stepId":"mise:1","status":"COMPLETED","expectedVersion":4}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(5));
+
+        mockMvc.perform(get("/api/v1/cooking-plans/saved")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].planId").value(planId))
+                .andExpect(jsonPath("$.items[0].completedStepCount").value(1))
+                .andExpect(jsonPath("$.items[0].dishNames[0]").value("Ginger Tofu Rice Bowl"));
+
+        mockMvc.perform(delete("/api/v1/cooking-plans/{planId}/saved", planId)
+                        .queryParam("resetProgress", "true")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.savedAt").isEmpty())
+                .andExpect(jsonPath("$.steps").isEmpty());
     }
 
     @Test
@@ -228,6 +355,53 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.finishedAt").isEmpty());
 
         assertThat(AGENT_CALL_COUNT).hasValue(1);
+    }
+
+    @Test
+    void finishArchivesADepletedLotSoItDisappearsFromInventory() throws Exception {
+        String accessToken = read(
+                register("cooking-finish-depleted@example.test", "Cooking Finish Depleted"),
+                "$.accessToken");
+        MvcResult lot = mockMvc.perform(post("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ingredientName": "Firm tofu",
+                                  "quantity": 300,
+                                  "unit": "g"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String lotId = read(lot, "$.lotId");
+        AGENT_RESPONSE.set(request -> CookingAgentResult.of(
+                readyPlanWithAllocation(request.requestId(), lotId),
+                json(readyPlanWithAllocation(request.requestId(), lotId))));
+
+        MvcResult generated = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "finish-depleted-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/finish", read(generated, "$.planId"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.finishedAt").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.totalItems").value(0));
+        assertThat(inventoryOnHand(lotId)).isEqualByComparingTo("0");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT archived_at IS NOT NULL FROM inventory_lot WHERE id = ?",
+                Boolean.class,
+                UUID.fromString(lotId))).isTrue();
     }
 
     @Test

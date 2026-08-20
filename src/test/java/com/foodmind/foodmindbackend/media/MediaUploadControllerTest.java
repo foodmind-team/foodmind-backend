@@ -1,6 +1,8 @@
 package com.foodmind.foodmindbackend.media;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -142,6 +144,37 @@ class MediaUploadControllerTest extends PostgreSqlContainerSupport {
                 .andExpect(status().isNoContent());
         mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletionDetachesTheAssetFromItsRecord() throws Exception {
+        String token = tokenFor("media-attached-delete@example.test");
+        String assetId = createAsset(token);
+        StorageTestConfiguration.METADATA.set(new ObjectStoragePort.ObjectMetadata("image/jpeg", 128,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        mockMvc.perform(post("/api/v1/media/{id}/finalise", assetId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk());
+
+        String recordId = read(mockMvc.perform(post("/api/v1/food-records")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mealNameSnapshot":"Attached meal","occurredAt":"2026-08-20T12:00:00Z",
+                                 "visibility":"PRIVATE","mediaAssetId":"%s"}
+                                """.formatted(assetId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.mediaAssetId").value(assetId))
+                .andReturn(), "$.id");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v1/media/{id}", assetId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/food-records/{id}", recordId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mediaAssetId").value(nullValue()))
+                .andExpect(jsonPath("$.version").value(1));
     }
 
     private String createAsset(String token) throws Exception {

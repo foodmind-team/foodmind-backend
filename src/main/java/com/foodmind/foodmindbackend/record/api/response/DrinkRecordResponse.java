@@ -29,15 +29,12 @@ public record DrinkRecordResponse(
         UUID groupId,
         UUID mediaAssetId,
         String imageUrl,
+        boolean canManage,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         Long version) {
 
-    public static DrinkRecordResponse from(DrinkRecord record) {
-        return from(record, null);
-    }
-
-    public static DrinkRecordResponse from(DrinkRecord record, String imageUrl) {
+    public static DrinkRecordResponse from(DrinkRecord record, String imageUrl, boolean canManage) {
         return new DrinkRecordResponse(
                 record.id(),
                 record.drinkName(),
@@ -54,6 +51,7 @@ public record DrinkRecordResponse(
                 record.groupId(),
                 record.mediaAssetId(),
                 imageUrl,
+                canManage,
                 record.createdAt(),
                 record.updatedAt(),
                 record.version());

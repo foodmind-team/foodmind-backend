@@ -1,5 +1,7 @@
 package com.foodmind.foodmindbackend.inventory.infrastructure.persistence;
 
+import com.foodmind.foodmindbackend.common.error.ApiException;
+import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.inventory.application.port.InventoryLotRepository;
 import com.foodmind.foodmindbackend.inventory.domain.InventoryLot;
 import com.foodmind.foodmindbackend.inventory.domain.InventoryLotPage;
@@ -7,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +38,47 @@ public class JdbcInventoryLotRepository implements InventoryLotRepository {
     @Override
     public InventoryLot create(InventoryLot lot) {
         UUID itemId = resolveItem(lot.ingredientName(), lot.unit());
+        List<InventoryLot> activeLots = jdbc.query(SELECT_COLUMNS + """
+                WHERE il.item_id = :itemId
+                  AND il.user_id = :userId
+                  AND il.archived_at IS NULL
+                ORDER BY il.created_at, il.id
+                FOR UPDATE OF il
+                """, new MapSqlParameterSource()
+                .addValue("itemId", itemId)
+                .addValue("userId", lot.userId()), mapper());
+        if (!activeLots.isEmpty()) {
+            InventoryLot existing = activeLots.get(0);
+            boolean hasIncompatibleUnit = activeLots.stream()
+                    .anyMatch(active -> !active.unit().equalsIgnoreCase(lot.unit()));
+            if (hasIncompatibleUnit) {
+                throw new ApiException(
+                        ErrorCode.CONFLICT,
+                        "This ingredient already exists with a different unit; update it before adding more.");
+            }
+            LocalDate mergedExpiryDate = earliest(existing.expiryDate(), lot.expiryDate());
+            OffsetDateTime mergedPurchasedAt = earliest(existing.purchasedAt(), lot.purchasedAt());
+            jdbc.update("""
+                    UPDATE inventory_lot
+                    SET on_hand = on_hand + :quantity,
+                        reserved = reserved + :reserved,
+                        expiry_date = :expiryDate,
+                        purchased_at = :purchasedAt,
+                        updated_at = :updatedAt,
+                        version = version + 1
+                    WHERE id = :id
+                      AND user_id = :userId
+                      AND archived_at IS NULL
+                    """, new MapSqlParameterSource()
+                    .addValue("id", existing.id())
+                    .addValue("userId", lot.userId())
+                    .addValue("quantity", lot.quantity())
+                    .addValue("reserved", lot.reserved())
+                    .addValue("expiryDate", mergedExpiryDate)
+                    .addValue("purchasedAt", mergedPurchasedAt)
+                    .addValue("updatedAt", lot.updatedAt()));
+            return findOwned(lot.userId(), existing.id()).orElseThrow();
+        }
         jdbc.update("""
                 INSERT INTO inventory_lot (
                     id, item_id, user_id, on_hand, reserved, unit, expiry_date,
@@ -49,12 +93,11 @@ public class JdbcInventoryLotRepository implements InventoryLotRepository {
 
     @Override
     public List<InventoryLot> createAll(List<InventoryLot> lots) {
+        List<InventoryLot> created = new ArrayList<>(lots.size());
         for (InventoryLot lot : lots) {
-            create(lot);
+            created.add(create(lot));
         }
-        return lots.stream()
-                .map(lot -> findOwned(lot.userId(), lot.id()).orElseThrow())
-                .toList();
+        return List.copyOf(created);
     }
 
     @Override
@@ -120,6 +163,7 @@ public class JdbcInventoryLotRepository implements InventoryLotRepository {
     }
 
     private UUID resolveItem(String ingredientName, String unit) {
+        String normalizedName = ingredientName.trim();
         UUID candidateId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO inventory_item (id, canonical_name, default_unit)
@@ -127,11 +171,24 @@ public class JdbcInventoryLotRepository implements InventoryLotRepository {
                 ON CONFLICT DO NOTHING
                 """, new MapSqlParameterSource()
                 .addValue("id", candidateId)
-                .addValue("name", ingredientName)
+                .addValue("name", normalizedName)
                 .addValue("unit", unit));
         return jdbc.queryForObject("""
-                SELECT id FROM inventory_item WHERE lower(canonical_name) = lower(:name)
-                """, new MapSqlParameterSource("name", ingredientName), UUID.class);
+                SELECT id
+                FROM inventory_item
+                WHERE lower(canonical_name) = lower(:name)
+                FOR UPDATE
+                """, new MapSqlParameterSource("name", normalizedName), UUID.class);
+    }
+
+    private <T extends Comparable<? super T>> T earliest(T first, T second) {
+        if (first == null) {
+            return second;
+        }
+        if (second == null) {
+            return first;
+        }
+        return first.compareTo(second) <= 0 ? first : second;
     }
 
     private MapSqlParameterSource params(InventoryLot lot) {
