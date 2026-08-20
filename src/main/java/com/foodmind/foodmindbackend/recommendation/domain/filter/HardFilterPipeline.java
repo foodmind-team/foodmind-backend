@@ -18,13 +18,9 @@ public class HardFilterPipeline {
     private final List<HardFilterPolicy> policies = List.of(
             new AllergenFilterPolicy(),
             new RequiredDietaryTagFilterPolicy(),
-            new BudgetCurrencyFilterPolicy(),
-            new SpiceFilterPolicy(),
             new DislikedCuisineFilterPolicy(),
             new RecentRepeatFilterPolicy(),
-            new AreaDistanceFilterPolicy(),
-            new RequestedTimeAvailabilityFilterPolicy(),
-            new CleanlinessEvidenceFilterPolicy());
+            new RequestedTimeAvailabilityFilterPolicy());
 
     public EvaluatedCandidate evaluate(
             RecommendationRequestContext request,
