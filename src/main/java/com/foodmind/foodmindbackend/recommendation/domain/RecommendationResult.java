@@ -21,6 +21,7 @@ public record RecommendationResult(
         String fallbackVersion,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt,
+        RecommendationDecisionProfile decisionProfile,
         List<RecommendationCandidateResult> items) {
 
     public RecommendationResult {

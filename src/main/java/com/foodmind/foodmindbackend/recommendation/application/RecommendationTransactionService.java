@@ -4,6 +4,7 @@ import com.foodmind.foodmindbackend.recommendation.application.port.Recommendati
 import com.foodmind.foodmindbackend.recommendation.domain.CandidateEvidence;
 import com.foodmind.foodmindbackend.recommendation.domain.EvaluatedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.PreferenceEvidence;
+import com.foodmind.foodmindbackend.recommendation.domain.RecommendationDecisionFactor;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import com.foodmind.foodmindbackend.recommendation.domain.agent.AgentFailureCode;
 import com.foodmind.foodmindbackend.recommendation.domain.agent.RecommendationAgentCandidate;
@@ -51,7 +52,9 @@ public class RecommendationTransactionService {
             List<EvaluatedCandidate> evaluatedCandidates,
             String traceId,
             UUID correlationId) {
-        UUID sessionId = sessionRepository.createSession(userId, request, requestSnapshot, correlationId);
+        Map<String, Object> persistedRequestSnapshot = new LinkedHashMap<>(requestSnapshot);
+        persistedRequestSnapshot.put("decisionProfile", decisionProfileSnapshot(preferences));
+        UUID sessionId = sessionRepository.createSession(userId, request, persistedRequestSnapshot, correlationId);
         Map<String, UUID> candidateIdsBySource = sessionRepository.insertEvaluations(
                 sessionId,
                 evaluatedCandidates,
@@ -119,6 +122,22 @@ public class RecommendationTransactionService {
         snapshot.put("dietaryTagCodes", preferences.dietaryTagCodes());
         snapshot.put("allergenCodes", preferences.allergenCodes());
         snapshot.put("preferredMealTypes", preferences.preferredMealTypes());
+        return snapshot;
+    }
+
+    private Map<String, Object> decisionProfileSnapshot(PreferenceEvidence preferences) {
+        List<RecommendationDecisionFactor> factors = new java.util.ArrayList<>();
+        if (preferences.spiceTolerance() != null) {
+            factors.add(RecommendationDecisionFactor.SPICE_PREFERENCE);
+        }
+        if (!preferences.allergenCodes().isEmpty()) {
+            factors.add(RecommendationDecisionFactor.ALLERGEN_AVOIDANCE);
+        }
+        if (!preferences.likedCuisineCodes().isEmpty()) {
+            factors.add(RecommendationDecisionFactor.CUISINE_PREFERENCE);
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("appliedFactors", factors.stream().map(Enum::name).toList());
         return snapshot;
     }
 

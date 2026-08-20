@@ -22,6 +22,7 @@ public record RecommendationResponse(
         String fallbackVersion,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt,
+        RecommendationDecisionProfileResponse decisionProfile,
         List<RecommendationCandidateResponse> items,
         List<RecommendationCandidateResponse> candidates) {
 
@@ -39,6 +40,7 @@ public record RecommendationResponse(
                 result.fallbackVersion(),
                 result.createdAt(),
                 result.completedAt(),
+                RecommendationDecisionProfileResponse.from(result.decisionProfile()),
                 candidates,
                 candidates);
     }
