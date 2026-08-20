@@ -60,11 +60,11 @@ class FoodmindBackendApplicationTests extends PostgreSqlContainerSupport {
         assertThat(migrations)
                 .extracting(migration -> migration.getVersion().getVersion())
                 .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
-                        "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26");
+                        "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27");
         assertThat(migrations)
                 .extracting(MigrationInfo::getState)
                 .containsOnly(MigrationState.SUCCESS);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("26");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("27");
     }
 
     @Test

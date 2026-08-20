@@ -48,7 +48,6 @@ class ChatAgentLiveIT {
                 "chat-live-profile",
                 OffsetDateTime.now().plusMinutes(1),
                 "live-delegation-smoke-token",
-                null,
                 "Where can I find saved records?",
                 List.of());
 

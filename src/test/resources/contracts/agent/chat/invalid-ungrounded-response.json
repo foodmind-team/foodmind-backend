@@ -1,12 +1,11 @@
 {
   "status": "SUCCEEDED",
-  "contractVersion": "chat-agent-v1",
+  "contractVersion": "chat-agent-v2",
   "requestId": "44000000-0000-4000-8000-000000000001",
   "sessionId": "44000000-0000-4000-8000-000000000002",
   "userMessageId": "44000000-0000-4000-8000-000000000003",
   "traceId": "44000000-0000-4000-8000-000000000004",
   "agentTraceId": "agent-chat-002",
-  "route": "SUMMARY",
   "responseStatus": "SUCCEEDED",
   "answer": "This answer has no sources.",
   "sources": []

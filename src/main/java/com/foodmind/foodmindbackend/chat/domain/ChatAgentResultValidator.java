@@ -45,8 +45,8 @@ public class ChatAgentResultValidator {
                 || !traceId.equals(result.traceId())) {
             throw new ChatAgentValidationException("Agent result does not match the request.");
         }
-        if (result.route() == null || result.responseStatus() == null) {
-            throw new ChatAgentValidationException("Agent route and status are required.");
+        if (result.responseStatus() == null) {
+            throw new ChatAgentValidationException("Agent response status is required.");
         }
         String answer = result.answer() == null ? "" : result.answer().trim();
         if (answer.isBlank() || answer.length() > MAX_ANSWER_LENGTH) {
@@ -63,14 +63,13 @@ public class ChatAgentResultValidator {
                 result.suggestedDestinations(),
                 "destination",
                 ALLOWED_DESTINATIONS);
-        if (result.route() == ChatRoute.OUT_OF_SCOPE) {
-            if (result.responseStatus() != ChatResponseStatus.UNSUPPORTED) {
-                throw new ChatAgentValidationException("Out-of-scope answers must use unsupported status.");
+        if (result.responseStatus() == ChatResponseStatus.UNSUPPORTED) {
+            if (!result.sources().isEmpty()) {
+                throw new ChatAgentValidationException("Unsupported answers must not cite sources.");
             }
             return new ValidatedChatAgentResult(
                     result.contractVersion(),
                     result.agentTraceId(),
-                    result.route(),
                     result.responseStatus(),
                     answer,
                     List.of(),
@@ -99,7 +98,6 @@ public class ChatAgentResultValidator {
         return new ValidatedChatAgentResult(
                 result.contractVersion(),
                 result.agentTraceId(),
-                result.route(),
                 result.responseStatus(),
                 answer,
                 result.sources(),

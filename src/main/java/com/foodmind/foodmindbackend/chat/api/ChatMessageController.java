@@ -54,7 +54,6 @@ public class ChatMessageController {
                 request.content(),
                 request.referenceIds(),
                 request.useSessionReferences(),
-                request.route(),
                 idempotencyKey));
     }
 

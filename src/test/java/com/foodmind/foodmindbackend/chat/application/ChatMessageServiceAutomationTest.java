@@ -15,7 +15,6 @@ import com.foodmind.foodmindbackend.chat.application.port.ChatReferenceQuery;
 import com.foodmind.foodmindbackend.chat.application.port.ChatRepository;
 import com.foodmind.foodmindbackend.chat.domain.ChatMessage;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.ChatSession;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentGenerationResult;
@@ -58,7 +57,6 @@ class ChatMessageServiceAutomationTest {
                 "Explain tofu",
                 List.of(),
                 false,
-                null,
                 "stable-key");
 
         assertThat(result).isSameAs(assistant);
@@ -81,7 +79,6 @@ class ChatMessageServiceAutomationTest {
                 "Explain tofu",
                 List.of(),
                 false,
-                null,
                 "stable-key"))
                 .isInstanceOfSatisfying(ApiException.class, exception -> {
                     assertThat(exception.errorCode()).isEqualTo(ErrorCode.CONFLICT);
@@ -113,7 +110,6 @@ class ChatMessageServiceAutomationTest {
                     command.userMessageId(),
                     command.traceId(),
                     "agent-trace",
-                    ChatRoute.SUMMARY,
                     ChatResponseStatus.SUCCEEDED,
                     "Tempeh is another useful comparison.",
                     List.of(),
@@ -129,16 +125,14 @@ class ChatMessageServiceAutomationTest {
                 fixture.sessionId,
                 "What about tempeh?",
                 List.of(),
-                false,
-                null);
+                false);
 
         assertThat(capturedCommand.get().recentTurns()).isEqualTo(turns);
         ArgumentCaptor<List<String>> scopes = ArgumentCaptor.forClass(List.class);
         verify(fixture.delegationTokenIssuer).issue(any(), anyString(), scopes.capture(), any());
         assertThat(scopes.getValue()).containsExactly(
                 DelegationTokenIssuer.SCOPE_CHAT_SEARCH,
-                DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE,
-                DelegationTokenIssuer.SCOPE_CHAT_PROFILE);
+                DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE);
         assertThat(result.suggestedQuestions()).containsExactly("Compare tofu and tempeh.");
         assertThat(result.suggestedDestinations()).containsExactly("EXPLORE");
         ArgumentCaptor<ValidatedChatAgentResult> validated = ArgumentCaptor.forClass(ValidatedChatAgentResult.class);
@@ -153,7 +147,6 @@ class ChatMessageServiceAutomationTest {
                 sessionId,
                 role,
                 content,
-                role.equals("ASSISTANT") ? ChatRoute.SUMMARY : null,
                 role.equals("ASSISTANT") ? ChatResponseStatus.SUCCEEDED : null,
                 UUID.randomUUID(),
                 role.equals("ASSISTANT") ? "agent" : null,

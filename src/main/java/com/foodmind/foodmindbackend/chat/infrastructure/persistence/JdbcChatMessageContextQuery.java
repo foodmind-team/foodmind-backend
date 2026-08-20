@@ -4,7 +4,6 @@ import com.foodmind.foodmindbackend.chat.application.port.ChatMessageContextQuer
 import com.foodmind.foodmindbackend.chat.domain.ChatMessage;
 import com.foodmind.foodmindbackend.chat.domain.ChatMessageSource;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourceType;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatConversationTurn;
 import com.foodmind.foodmindbackend.common.error.ApiException;
@@ -82,7 +81,7 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
     @Override
     public Optional<ChatMessage> findOwnedMessage(UUID userId, UUID sessionId, UUID messageId) {
         return jdbcTemplate.query("""
-                SELECT message.id, message.session_id, message.role, message.content, message.route,
+                SELECT message.id, message.session_id, message.role, message.content,
                        message.response_status, message.correlation_id, message.agent_trace_id, message.created_at,
                        message.suggested_questions, message.suggested_destinations
                 FROM chat_message message
@@ -103,7 +102,6 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -195,14 +193,12 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
     }
 
     private ChatMessage messageRow(ResultSet rs, int rowNum) throws SQLException {
-        String route = rs.getString("route");
         String responseStatus = rs.getString("response_status");
         return new ChatMessage(
                 rs.getObject("id", UUID.class),
                 rs.getObject("session_id", UUID.class),
                 rs.getString("role"),
                 rs.getString("content"),
-                route == null ? null : ChatRoute.valueOf(route),
                 responseStatus == null ? null : ChatResponseStatus.valueOf(responseStatus),
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("agent_trace_id"),
