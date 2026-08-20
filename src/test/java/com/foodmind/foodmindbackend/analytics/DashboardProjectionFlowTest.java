@@ -72,6 +72,31 @@ class DashboardProjectionFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.metrics[?(@.code == 'FOOD_DRINK_COUNT')].value").value(1));
     }
 
+    @Test
+    void weeklyRecapIncludesOwnerOnlyClassifiedCuisineMix() throws Exception {
+        String ownerToken = token(register("recap-cuisine-owner@example.test", "Recap Cuisine Owner"));
+        register("recap-cuisine-other@example.test", "Recap Cuisine Other");
+        UUID ownerId = userId("recap-cuisine-owner@example.test");
+        UUID otherId = userId("recap-cuisine-other@example.test");
+        OffsetDateTime occurredAt = OffsetDateTime.parse("2026-07-28T12:00:00Z");
+
+        insertCuisineFood(ownerId, occurredAt, "INDIAN", false);
+        insertCuisineFood(ownerId, occurredAt, "INDIAN", false);
+        insertCuisineFood(ownerId, occurredAt, "CHINESE", false);
+        insertCuisineFood(ownerId, occurredAt, null, false);
+        insertCuisineFood(ownerId, occurredAt, "JAPANESE", true);
+        insertCuisineFood(otherId, occurredAt, "MALAY", false);
+
+        mockMvc.perform(get("/api/v1/weekly-recaps/2026-07-27")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metrics[?(@.code == 'CUISINE_DISTRIBUTION')].length()").value(2))
+                .andExpect(jsonPath("$.metrics[?(@.dimension == 'INDIAN')].dimensionLabel").value("Indian"))
+                .andExpect(jsonPath("$.metrics[?(@.dimension == 'INDIAN')].value").value(2))
+                .andExpect(jsonPath("$.metrics[?(@.dimension == 'CHINESE')].dimensionLabel").value("Chinese"))
+                .andExpect(jsonPath("$.metrics[?(@.dimension == 'CHINESE')].value").value(1));
+    }
+
     private MvcResult register(String email, String displayName) throws Exception {
         return mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -106,6 +131,20 @@ class DashboardProjectionFlowTest extends PostgreSqlContainerSupport {
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRIVATE', ?)
                         """, UUID.randomUUID(), ownerId, "Fixture drink", "Fixture shop", occurredAt, new BigDecimal(price),
                 currency, new BigDecimal("3.0"), wouldAgain, deleted ? OffsetDateTime.now().plusMinutes(1) : null);
+    }
+
+    private void insertCuisineFood(UUID ownerId, OffsetDateTime occurredAt, String cuisineCode, boolean deleted) {
+        UUID cuisineId = cuisineCode == null ? null : jdbc.queryForObject(
+                "SELECT id FROM cuisine WHERE code = ?",
+                UUID.class,
+                cuisineCode);
+        jdbc.update("""
+                        INSERT INTO food_record (
+                            id, owner_user_id, meal_name_snapshot, cuisine_id, occurred_at,
+                            visibility, deleted_at)
+                        VALUES (?, ?, ?, ?, ?, 'PRIVATE', ?)
+                        """, UUID.randomUUID(), ownerId, "Cuisine fixture " + cuisineCode, cuisineId, occurredAt,
+                deleted ? OffsetDateTime.now().plusMinutes(1) : null);
     }
 
     private UUID userId(String email) {
