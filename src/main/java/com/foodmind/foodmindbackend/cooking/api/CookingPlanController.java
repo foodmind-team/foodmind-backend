@@ -128,6 +128,14 @@ public class CookingPlanController {
         return CookingPlanInventoryConsumptionResponse.from(consumeCookingPlanInventory.handle(principal.id(), planId));
     }
 
+    @PostMapping("/{planId}/finish")
+    CookingPlanResponse finish(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        consumeCookingPlanInventory.handle(principal.id(), planId);
+        return CookingPlanResponse.from(getCookingPlan.handle(principal.id(), planId));
+    }
+
     @GetMapping("/{planId}")
     CookingPlanResponse get(
             @AuthenticationPrincipal FoodMindPrincipal principal,

@@ -65,7 +65,53 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             List<AgentRecipeInput> sources,
             String traceId,
             String rawRequestJson) {
-        return createProcessing(userId, request, sources, traceId, rawRequestJson, null, null);
+        return createProcessing(userId, request, sources, traceId, rawRequestJson, null, null, null, null);
+    }
+
+    @Override
+    @Transactional
+    public UUID createProcessingWithReuseMetadata(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId) {
+        return createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                null, null, requestFingerprint, reusedFromPlanId);
+    }
+
+    @Override
+    @Transactional
+    public UUID createReusedReady(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId,
+            AgentReadyPlanResponse reusedResponse) {
+        UUID planId = createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                null, null, requestFingerprint, reusedFromPlanId);
+        AgentReadyPlanResponse rebound = new AgentReadyPlanResponse(
+                planId.toString(),
+                reusedResponse.status(),
+                reusedResponse.solverStatus(),
+                reusedResponse.makespanMinutes(),
+                reusedResponse.timeline(),
+                reusedResponse.completionChecklist(),
+                reusedResponse.miseEnPlace(),
+                reusedResponse.dishCompletions(),
+                reusedResponse.safetyPolicy(),
+                reusedResponse.explanation(),
+                reusedResponse.explanationSource(),
+                reusedResponse.executionFlow());
+        completeReady(userId, planId, rebound, toJson(rebound));
+        return planId;
     }
 
     @Override
@@ -81,7 +127,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
         if (parentPlanId == null || rootPlanId == null) {
             throw new IllegalArgumentException("Child cooking plans require parent and root plan IDs.");
         }
-        return createProcessing(userId, request, sources, traceId, rawRequestJson, parentPlanId, rootPlanId);
+        return createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                parentPlanId, rootPlanId, null, null);
     }
 
     private UUID createProcessing(
@@ -91,7 +139,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             String traceId,
             String rawRequestJson,
             UUID parentPlanId,
-            UUID requestedRootPlanId) {
+            UUID requestedRootPlanId,
+            String requestFingerprint,
+            UUID reusedFromPlanId) {
         UUID planId = UUID.randomUUID();
         UUID rootPlanId = requestedRootPlanId == null ? planId : requestedRootPlanId;
         String correlationId = sanitiseCorrelationId(traceId);
@@ -99,12 +149,12 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 INSERT INTO cooking_plan (
                     id, user_id, parent_plan_id, root_plan_id, status, agent_request_id, plan_revision, region, cooking_date,
                     serving_at, time_limit_minutes, correlation_id, agent_trace_id, schema_version,
-                    request_context
+                    request_context, request_fingerprint, reused_from_plan_id
                 )
                 VALUES (
                     :id, :userId, :parentPlanId, :rootPlanId, 'PROCESSING', :agentRequestId, :planRevision, :region, :cookingDate,
                     :servingAt, :timeLimitMinutes, :correlationId, :agentTraceId, :schemaVersion,
-                    CAST(:requestContext AS jsonb)
+                    CAST(:requestContext AS jsonb), :requestFingerprint, :reusedFromPlanId
                 )
                 """,
                 new MapSqlParameterSource()
@@ -121,7 +171,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                         .addValue("correlationId", correlationId)
                         .addValue("agentTraceId", traceId)
                         .addValue("schemaVersion", request.schemaVersion())
-                        .addValue("requestContext", rawRequestJson == null ? "{}" : rawRequestJson));
+                        .addValue("requestContext", rawRequestJson == null ? "{}" : rawRequestJson)
+                        .addValue("requestFingerprint", requestFingerprint)
+                        .addValue("reusedFromPlanId", reusedFromPlanId));
         insertSources(planId, request, sources);
         insertAgentRequest(planId, userId, request, sources, correlationId);
         return planId;
@@ -249,7 +301,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 SELECT id, user_id, status, agent_request_id, plan_revision, region, cooking_date,
                        serving_at, time_limit_minutes, solver_status, makespan_minutes, correlation_id,
                        schema_version, error_code, error_message, request_context, response_json,
-                       safety_policy_json, created_at, completed_at
+                       safety_policy_json, created_at, completed_at, finished_at, reused_from_plan_id
                 FROM cooking_plan
                 WHERE id = :planId
                   AND user_id = :userId
@@ -264,6 +316,57 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             return Optional.empty();
         }
         return Optional.of(assemble(root.get()));
+    }
+
+    @Override
+    public Optional<ReusableReadyPlan> findReusableReadyPlan(UUID userId, String requestFingerprint) {
+        return jdbcTemplate.query("""
+                SELECT cp.id, cp.response_json::text AS response_json
+                FROM cooking_plan cp
+                WHERE cp.user_id = :userId
+                  AND cp.status = 'READY'
+                  AND cp.request_fingerprint = :requestFingerprint
+                  AND cp.response_json IS NOT NULL
+                  AND (
+                      SELECT count(*)
+                      FROM jsonb_array_elements(
+                          COALESCE(cp.response_json->'completion_checklist', '[]'::jsonb)
+                      ) completion_item
+                      CROSS JOIN LATERAL jsonb_array_elements(
+                          COALESCE(completion_item->'allocations', '[]'::jsonb)
+                      ) allocation
+                  ) = (
+                      SELECT count(*)
+                      FROM cooking_plan_completion_item ci
+                      JOIN cooking_plan_lot_allocation al ON al.completion_item_id = ci.id
+                      WHERE ci.plan_id = cp.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM (
+                          SELECT al.inventory_lot_id, sum(al.quantity) AS required_quantity
+                          FROM cooking_plan_completion_item ci
+                          JOIN cooking_plan_lot_allocation al ON al.completion_item_id = ci.id
+                          WHERE ci.plan_id = cp.id
+                          GROUP BY al.inventory_lot_id
+                      ) required
+                      LEFT JOIN inventory_lot lot ON lot.id = required.inventory_lot_id
+                      WHERE lot.id IS NULL
+                         OR lot.user_id <> :userId
+                         OR lot.on_hand - lot.reserved < required.required_quantity
+                         OR (lot.expiry_date IS NOT NULL AND lot.expiry_date < CURRENT_DATE)
+                  )
+                ORDER BY cp.created_at DESC, cp.id DESC
+                LIMIT 1
+                """,
+                new MapSqlParameterSource()
+                        .addValue("userId", userId)
+                        .addValue("requestFingerprint", requestFingerprint),
+                (rs, rowNum) -> new ReusableReadyPlan(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("response_json")))
+                .stream()
+                .findFirst();
     }
 
     @Override
@@ -797,7 +900,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 timeline(root.id()),
                 miseEnPlace(root.id()),
@@ -825,7 +928,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 assumptions(root.id()),
@@ -851,7 +954,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -864,7 +967,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -877,7 +980,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -1140,7 +1243,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 rs.getString("response_json"),
                 rs.getString("safety_policy_json"),
                 rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("completed_at", OffsetDateTime.class));
+                rs.getObject("completed_at", OffsetDateTime.class),
+                rs.getObject("finished_at", OffsetDateTime.class),
+                rs.getObject("reused_from_plan_id", UUID.class));
     }
 
     private CookingPlanSummary summaryRow(ResultSet rs, int rowNum) throws SQLException {
@@ -1245,6 +1350,8 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             String responseJson,
             String safetyPolicyJson,
             OffsetDateTime createdAt,
-            OffsetDateTime completedAt) {
+            OffsetDateTime completedAt,
+            OffsetDateTime finishedAt,
+            UUID reusedFromPlanId) {
     }
 }
