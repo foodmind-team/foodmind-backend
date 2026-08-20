@@ -1,5 +1,6 @@
 package com.foodmind.foodmindbackend.recommendation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
@@ -128,6 +129,28 @@ class RecommendationFallbackFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.status").value("NO_VALID_CANDIDATE"))
                 .andExpect(jsonPath("$.fallbackStatus").value("NO_VALID_CANDIDATE"))
                 .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
+    void distanceWithoutCoordinatesIsRejectedBeforePersistence() throws Exception {
+        String accessToken = read(register("recommendation-distance@example.test", "Recommendation Distance"), "$.accessToken");
+
+        mockMvc.perform(post("/api/v1/recommendations/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "recommendation-distance-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mealType": "DINNER",
+                                  "maxDistanceKm": 900,
+                                  "requestedFor": "2030-07-30T12:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM idempotency_record", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM recommendation_session", Integer.class)).isZero();
     }
 
     @Test
