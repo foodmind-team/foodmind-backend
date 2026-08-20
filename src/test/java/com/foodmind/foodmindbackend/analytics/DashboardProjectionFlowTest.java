@@ -1,5 +1,6 @@
 package com.foodmind.foodmindbackend.analytics;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,7 +91,7 @@ class DashboardProjectionFlowTest extends PostgreSqlContainerSupport {
         mockMvc.perform(get("/api/v1/weekly-recaps/2026-07-27")
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.metrics[?(@.code == 'CUISINE_DISTRIBUTION')].length()").value(2))
+                .andExpect(jsonPath("$.metrics[?(@.code == 'CUISINE_DISTRIBUTION')]", hasSize(2)))
                 .andExpect(jsonPath("$.metrics[?(@.dimension == 'INDIAN')].dimensionLabel").value("Indian"))
                 .andExpect(jsonPath("$.metrics[?(@.dimension == 'INDIAN')].value").value(2))
                 .andExpect(jsonPath("$.metrics[?(@.dimension == 'CHINESE')].dimensionLabel").value("Chinese"))
