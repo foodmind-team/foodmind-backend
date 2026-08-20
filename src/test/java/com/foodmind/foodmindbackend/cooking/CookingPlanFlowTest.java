@@ -17,6 +17,7 @@ import com.foodmind.foodmindbackend.cooking.domain.agent.AgentDishCompletion;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentInfeasiblePlanResponse;
+import com.foodmind.foodmindbackend.cooking.domain.agent.AgentLotAllocation;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentMiseEnPlaceItem;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentQuestionOption;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentReadyPlanResponse;
@@ -171,6 +172,62 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
         assertThat(AGENT_CALL_COUNT).hasValue(1);
         Long planCount = jdbcTemplate.queryForObject("SELECT count(*) FROM cooking_plan", Long.class);
         assertThat(planCount).isEqualTo(1);
+    }
+
+    @Test
+    void finishConsumesInventoryOnceAndAsyncGenerationReusesEquivalentReadySchedule() throws Exception {
+        String accessToken = read(register("cooking-finish-reuse@example.test", "Cooking Finish Reuse"), "$.accessToken");
+        MvcResult lot = mockMvc.perform(post("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ingredientName": "Firm tofu",
+                                  "quantity": 600,
+                                  "unit": "g"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String lotId = read(lot, "$.lotId");
+        AGENT_RESPONSE.set(request -> CookingAgentResult.of(
+                readyPlanWithAllocation(request.requestId(), lotId),
+                json(readyPlanWithAllocation(request.requestId(), lotId))));
+
+        MvcResult generated = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "finish-reuse-root-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.finishedAt").isEmpty())
+                .andReturn();
+        String planId = read(generated, "$.planId");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/finish", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planId").value(planId))
+                .andExpect(jsonPath("$.finishedAt").isNotEmpty());
+        assertThat(inventoryOnHand(lotId)).isEqualByComparingTo("300");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/finish", planId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.finishedAt").isNotEmpty());
+        assertThat(inventoryOnHand(lotId)).isEqualByComparingTo("300");
+
+        mockMvc.perform(post("/api/v1/cooking-plans/generate-async")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "finish-reuse-second-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.reusedFromPlanId").value(planId))
+                .andExpect(jsonPath("$.finishedAt").isEmpty());
+
+        assertThat(AGENT_CALL_COUNT).hasValue(1);
     }
 
     @Test
@@ -883,6 +940,18 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
                 null, null, null, List.of());
     }
 
+    private static AgentReadyPlanResponse readyPlanWithAllocation(String planId, String lotId) {
+        AgentReadyPlanResponse ready = readyPlan(planId);
+        return new AgentReadyPlanResponse(
+                ready.planId(), ready.status(), ready.solverStatus(), ready.makespanMinutes(),
+                ready.timeline(),
+                List.of(new AgentCompletionItem(
+                        "c-1", "Firm tofu", List.of("d-1"),
+                        List.of(new AgentLotAllocation(lotId, new java.math.BigDecimal("300"), "g")))),
+                ready.miseEnPlace(), ready.dishCompletions(), ready.safetyPolicy(),
+                ready.explanation(), ready.explanationSource(), ready.executionFlow());
+    }
+
     private static String json(Object value) {
         try {
             return JSON.writeValueAsString(value);
@@ -982,6 +1051,13 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
 
     private long inventoryCount() {
         return jdbcTemplate.queryForObject("SELECT count(*) FROM inventory_lot", Long.class);
+    }
+
+    private java.math.BigDecimal inventoryOnHand(String lotId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT on_hand FROM inventory_lot WHERE id = ?",
+                java.math.BigDecimal.class,
+                UUID.fromString(lotId));
     }
 
     private String read(MvcResult result, String path) throws Exception {

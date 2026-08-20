@@ -24,6 +24,31 @@ public interface CookingPlanRepository {
     UUID createProcessing(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
                           String traceId, String rawRequestJson);
 
+    default UUID createProcessingWithReuseMetadata(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId) {
+        return createProcessing(userId, request, sources, traceId, rawRequestJson);
+    }
+
+    default UUID createReusedReady(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId,
+            AgentReadyPlanResponse reusedResponse) {
+        UUID planId = createProcessing(userId, request, sources, traceId, rawRequestJson);
+        completeReady(userId, planId, reusedResponse, null);
+        return planId;
+    }
+
     UUID createProcessingChild(UUID userId, AgentGeneratePlanRequest request, List<AgentRecipeInput> sources,
                                String traceId, String rawRequestJson, UUID parentPlanId, UUID rootPlanId);
 
@@ -37,6 +62,10 @@ public interface CookingPlanRepository {
                         String rawResponseJson);
 
     Optional<CookingPlanResult> findOwned(UUID userId, UUID planId);
+
+    default Optional<ReusableReadyPlan> findReusableReadyPlan(UUID userId, String requestFingerprint) {
+        return Optional.empty();
+    }
 
     /** The stored agent request JSON ({@code request_context}) of an owned plan. */
     Optional<String> findRequestContext(UUID userId, UUID planId);
@@ -92,5 +121,8 @@ public interface CookingPlanRepository {
     }
 
     record PlanLineage(UUID planId, UUID parentPlanId, UUID rootPlanId) {
+    }
+
+    record ReusableReadyPlan(UUID planId, String responseJson) {
     }
 }

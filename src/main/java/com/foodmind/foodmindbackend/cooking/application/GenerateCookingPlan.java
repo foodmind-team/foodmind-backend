@@ -97,12 +97,14 @@ public class GenerateCookingPlan {
         // Hash a stable snapshot of the PUBLIC request (never the agent request, which
         // embeds a per-call trace id) so retries with the same key reproduce the same hash.
         String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
+        String requestFingerprint = reuseFingerprint(requestHashSeed, agentRequest);
         return generateAndPersist(userId, agentRequest,
                 assembler.recipeInputs(candidates, request.servings()),
                 traceId,
                 OPERATION,
                 idempotencyKey,
-                requestHashSeed);
+                requestHashSeed,
+                requestFingerprint);
     }
 
     /**
@@ -124,9 +126,10 @@ public class GenerateCookingPlan {
                 assembler.assembleForAsync(userId, request, mergedRules, candidates, traceId);
         // Hash the PUBLIC request snapshot (never the agent request, which embeds a per-call trace id).
         String requestHashSeed = toJson(requestSnapshot(request, mergedRules));
+        String requestFingerprint = reuseFingerprint(requestHashSeed, agentRequest);
         return submitPreparedAsync(userId, agentRequest,
                 assembler.recipeInputs(candidates, request.servings()), traceId,
-                OPERATION_ASYNC, idempotencyKey, requestHashSeed, null, null);
+                OPERATION_ASYNC, idempotencyKey, requestHashSeed, null, null, requestFingerprint);
     }
 
     private static String taskLocation(UUID planId) {
@@ -135,8 +138,8 @@ public class GenerateCookingPlan {
 
     /**
      * Outcome of an async submission: {@link Accepted} maps to {@code 202} with the
-     * task handle, {@link RejectedPlan} maps to {@code 200} with the terminal FAILED
-     * plan (submission failed before a task existed). Replay of a completed
+     * task handle, {@link RejectedPlan} maps to {@code 200} with a terminal plan
+     * (either a reused READY plan or a submission failure). Replay of a completed
      * idempotency key reproduces whichever outcome the first attempt produced.
      */
     public sealed interface AsyncSubmitResult {
@@ -151,7 +154,7 @@ public class GenerateCookingPlan {
             return new Accepted(planId, status, taskId);
         }
 
-        static RejectedPlan failedPlan(CookingPlanResult plan) {
+        static RejectedPlan resolvedPlan(CookingPlanResult plan) {
             return new RejectedPlan(plan);
         }
     }
@@ -170,7 +173,7 @@ public class GenerateCookingPlan {
         DecisionSubmission submission = prepareDecisionSubmission(userId, planId, answers);
         return generateAndPersist(userId, submission.request(), submission.request().recipes(),
                 submission.traceId(), OPERATION_DECIDE, idempotencyKey, submission.requestHashSeed(),
-                planId, submission.rootPlanId());
+                planId, submission.rootPlanId(), null);
     }
 
     public AsyncSubmitResult submitDecisionsAsync(
@@ -181,7 +184,7 @@ public class GenerateCookingPlan {
         DecisionSubmission submission = prepareDecisionSubmission(userId, planId, answers);
         return submitPreparedAsync(userId, submission.request(), submission.request().recipes(),
                 submission.traceId(), OPERATION_DECIDE_ASYNC, idempotencyKey,
-                submission.requestHashSeed(), planId, submission.rootPlanId());
+                submission.requestHashSeed(), planId, submission.rootPlanId(), null);
     }
 
     /** Regenerates the plan that produced the list after real purchased inventory was persisted. */
@@ -207,7 +210,7 @@ public class GenerateCookingPlan {
                 "sourcePlanId", sourcePlanId,
                 "rootPlanId", rootPlanId));
         return submitPreparedAsync(userId, refreshed, refreshed.recipes(), traceId,
-                OPERATION_SHOPPING_CONTINUE, idempotencyKey, hashSeed, sourcePlanId, rootPlanId);
+                OPERATION_SHOPPING_CONTINUE, idempotencyKey, hashSeed, sourcePlanId, rootPlanId, null);
     }
 
     /**
@@ -221,7 +224,7 @@ public class GenerateCookingPlan {
         return planRepository.findGeneration(planId)
                 .<AsyncSubmitResult>map(generation -> AsyncSubmitResult.accepted(
                         plan.planId(), plan.status(), generation.taskId()))
-                .orElseGet(() -> AsyncSubmitResult.failedPlan(plan));
+                .orElseGet(() -> AsyncSubmitResult.resolvedPlan(plan));
     }
 
     private DecisionSubmission prepareDecisionSubmission(
@@ -260,7 +263,8 @@ public class GenerateCookingPlan {
             String idempotencyKey,
             String requestHashSeed,
             UUID parentPlanId,
-            UUID rootPlanId) {
+            UUID rootPlanId,
+            String requestFingerprint) {
         String requestHash = idempotencyService.sha256Hex(requestHashSeed);
         IdempotencyRecord idempotency = idempotencyService.begin(userId, operation, idempotencyKey, requestHash);
 
@@ -271,14 +275,28 @@ public class GenerateCookingPlan {
             if (generation.isPresent()) {
                 return AsyncSubmitResult.accepted(plan.planId(), plan.status(), generation.get().taskId());
             }
-            return AsyncSubmitResult.failedPlan(plan);
+            return AsyncSubmitResult.resolvedPlan(plan);
         }
         if (!"IN_PROGRESS".equals(idempotency.state())) {
             throw new ApiException(ErrorCode.CONFLICT, "The idempotency record is not available for retry.");
         }
 
+        Optional<CookingPlanRepository.ReusableReadyPlan> reusable = reusablePlan(userId, requestFingerprint);
+        if (reusable.isPresent()) {
+            CookingPlanRepository.ReusableReadyPlan source = reusable.get();
+            UUID reusedPlanId = planRepository.createReusedReady(
+                    userId, agentRequest, sources, traceId, toJson(agentRequest),
+                    requestFingerprint, source.planId(), parseReadyResponse(source.responseJson()));
+            CookingPlanResult result = planRepository.findOwned(userId, reusedPlanId)
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            idempotencyService.complete(
+                    idempotency.id(), reusedPlanId, 200, toJson(CookingPlanResponse.from(result)));
+            return AsyncSubmitResult.resolvedPlan(result);
+        }
+
         UUID planId = parentPlanId == null
-                ? planRepository.createProcessing(userId, agentRequest, sources, traceId, toJson(agentRequest))
+                ? planRepository.createProcessingWithReuseMetadata(
+                        userId, agentRequest, sources, traceId, toJson(agentRequest), requestFingerprint, null)
                 : planRepository.createProcessingChild(userId, agentRequest, sources, traceId, toJson(agentRequest),
                         parentPlanId, rootPlanId);
         AgentTaskSubmission taskSubmission;
@@ -292,7 +310,7 @@ public class GenerateCookingPlan {
             CookingPlanResult failed = planRepository.findOwned(userId, planId)
                     .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
             idempotencyService.complete(idempotency.id(), planId, 200, toJson(CookingPlanResponse.from(failed)));
-            return AsyncSubmitResult.failedPlan(failed);
+            return AsyncSubmitResult.resolvedPlan(failed);
         }
         planRepository.createGeneration(planId, taskSubmission.taskId());
         CookingPlanAsyncAcceptedResponse acceptedBody = new CookingPlanAsyncAcceptedResponse(
@@ -308,9 +326,10 @@ public class GenerateCookingPlan {
             String traceId,
             String operation,
             String idempotencyKey,
-            String requestHashSeed) {
+            String requestHashSeed,
+            String requestFingerprint) {
         return generateAndPersist(userId, agentRequest, sources, traceId, operation,
-                idempotencyKey, requestHashSeed, null, null);
+                idempotencyKey, requestHashSeed, null, null, requestFingerprint);
     }
 
     private CookingPlanResult generateAndPersist(
@@ -322,7 +341,8 @@ public class GenerateCookingPlan {
             String idempotencyKey,
             String requestHashSeed,
             UUID parentPlanId,
-            UUID rootPlanId) {
+            UUID rootPlanId,
+            String requestFingerprint) {
         String requestHash = idempotencyService.sha256Hex(requestHashSeed);
         IdempotencyRecord idempotency = idempotencyService.begin(userId, operation, idempotencyKey, requestHash);
 
@@ -334,8 +354,21 @@ public class GenerateCookingPlan {
             throw new ApiException(ErrorCode.CONFLICT, "The idempotency record is not available for retry.");
         }
 
+        Optional<CookingPlanRepository.ReusableReadyPlan> reusable = reusablePlan(userId, requestFingerprint);
+        if (reusable.isPresent()) {
+            CookingPlanRepository.ReusableReadyPlan source = reusable.get();
+            UUID reusedPlanId = planRepository.createReusedReady(
+                    userId, agentRequest, sources, traceId, toJson(agentRequest),
+                    requestFingerprint, source.planId(), parseReadyResponse(source.responseJson()));
+            CookingPlanResult result = planRepository.findOwned(userId, reusedPlanId)
+                    .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            idempotencyService.complete(idempotency.id(), reusedPlanId, 201, toJson(result));
+            return result;
+        }
+
         UUID planId = parentPlanId == null
-                ? planRepository.createProcessing(userId, agentRequest, sources, traceId, toJson(agentRequest))
+                ? planRepository.createProcessingWithReuseMetadata(
+                        userId, agentRequest, sources, traceId, toJson(agentRequest), requestFingerprint, null)
                 : planRepository.createProcessingChild(userId, agentRequest, sources, traceId, toJson(agentRequest),
                         parentPlanId, rootPlanId);
 
@@ -378,6 +411,30 @@ public class GenerateCookingPlan {
             meterRegistry.counter("foodmind.cooking.agent.failure", "code", failureCode).increment();
         }
         return result;
+    }
+
+    private Optional<CookingPlanRepository.ReusableReadyPlan> reusablePlan(
+            UUID userId,
+            String requestFingerprint) {
+        if (requestFingerprint == null) {
+            return Optional.empty();
+        }
+        return planRepository.findReusableReadyPlan(userId, requestFingerprint);
+    }
+
+    private String reuseFingerprint(String publicRequestSnapshot, AgentGeneratePlanRequest agentRequest) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("publicRequest", publicRequestSnapshot);
+        snapshot.put("kitchenResources", agentRequest.kitchenResources());
+        return idempotencyService.sha256Hex(toJson(snapshot));
+    }
+
+    private AgentReadyPlanResponse parseReadyResponse(String responseJson) {
+        try {
+            return objectMapper.readValue(responseJson, AgentReadyPlanResponse.class);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("Invalid reusable READY cooking-plan response.", exception);
+        }
     }
 
     private record DecisionSubmission(
