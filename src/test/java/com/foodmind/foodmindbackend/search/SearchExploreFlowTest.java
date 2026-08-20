@@ -81,6 +81,13 @@ class SearchExploreFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[*].sourceId", not(hasItem(privateRecordId))));
 
+        mockMvc.perform(get("/api/v1/explore")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .queryParam("types", "FOOD_RECORD")
+                        .queryParam("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].sourceId", hasItem(privateRecordId)));
+
         mockMvc.perform(get("/api/v1/search")
                         .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
                         .queryParam("q", "Searchable group record")
