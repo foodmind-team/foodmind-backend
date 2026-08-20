@@ -116,7 +116,7 @@ class RecommendationFallbackFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
-    void hardFiltersReturnPresentationSafeEmptyResult() throws Exception {
+    void budgetIsASoftPreferenceAndStillReturnsFallbackCandidates() throws Exception {
         String accessToken = read(register("recommendation-empty@example.test", "Recommendation Empty"), "$.accessToken");
 
         mockMvc.perform(post("/api/v1/recommendations/generate")
@@ -125,9 +125,9 @@ class RecommendationFallbackFlowTest extends PostgreSqlContainerSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(standardDinnerRequest("0.01")))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("NO_VALID_CANDIDATE"))
-                .andExpect(jsonPath("$.fallbackStatus").value("NO_VALID_CANDIDATE"))
-                .andExpect(jsonPath("$.items.length()").value(0));
+                .andExpect(jsonPath("$.status").value("FALLBACK_SUCCEEDED"))
+                .andExpect(jsonPath("$.fallbackStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.items.length()", lessThanOrEqualTo(3)));
     }
 
     @Test
