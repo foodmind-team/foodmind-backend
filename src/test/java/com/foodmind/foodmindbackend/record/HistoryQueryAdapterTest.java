@@ -151,6 +151,63 @@ class HistoryQueryAdapterTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.fieldErrors[0].code").value("RANGE_MAX"));
     }
 
+    @Test
+    void personalHistoryExcludesRecordsOwnedByOtherGroupMembers() throws Exception {
+        MvcResult owner = register("history-group-owner@example.test", "History Group Owner");
+        String ownerToken = read(owner, "$.accessToken");
+        MvcResult member = register("history-group-member@example.test", "History Group Member");
+        String memberToken = read(member, "$.accessToken");
+
+        String groupId = createGroup(ownerToken, "History Group");
+        join(memberToken, groupId, ownerToken);
+
+        mockMvc.perform(post("/api/v1/food-records")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mealNameSnapshot": "Member group noodles",
+                                  "occurredAt": "2026-07-28T04:15:00Z",
+                                  "visibility": "GROUP",
+                                  "groupId": "%s"
+                                }
+                                """.formatted(groupId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/drink-records")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "drinkName": "Member group tea",
+                                  "shopNameSnapshot": "Group Tea Shop",
+                                  "occurredAt": "2026-07-28T05:15:00Z",
+                                  "visibility": "GROUP",
+                                  "groupId": "%s"
+                                }
+                                """.formatted(groupId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/history")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .queryParam("from", "2026-07-28T00:00:00Z")
+                        .queryParam("to", "2026-07-29T00:00:00Z")
+                        .queryParam("groupId", groupId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.entries").isEmpty())
+                .andExpect(jsonPath("$.buckets").isEmpty());
+
+        mockMvc.perform(get("/api/v1/history")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
+                        .queryParam("from", "2026-07-28T00:00:00Z")
+                        .queryParam("to", "2026-07-29T00:00:00Z")
+                        .queryParam("groupId", groupId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.entries.length()").value(2))
+                .andExpect(jsonPath("$.buckets[0].foodCount").value(1))
+                .andExpect(jsonPath("$.buckets[0].drinkCount").value(1));
+    }
+
     private void insertFood(UUID ownerUserId, UUID id, String name, String occurredAt, OffsetDateTime deletedAt) {
         jdbcTemplate.update("""
                 INSERT INTO food_record (
@@ -169,6 +226,29 @@ class HistoryQueryAdapterTest extends PostgreSqlContainerSupport {
                 )
                 VALUES (?, ?, ?, 'Test Tea Shop', ?::timestamptz, 4.5, 2, 1, true, 'PRIVATE', ?)
                 """, id, ownerUserId, name, occurredAt, deletedAt);
+    }
+
+    private String createGroup(String accessToken, String name) throws Exception {
+        return read(mockMvc.perform(post("/api/v1/groups")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"%s\"}".formatted(name)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
+    }
+
+    private void join(String memberToken, String groupId, String ownerToken) throws Exception {
+        String invitationToken = read(mockMvc.perform(post("/api/v1/groups/{groupId}/invitations", groupId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxUses\":1}"))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.token");
+        mockMvc.perform(post("/api/v1/group-invitations/join")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"%s\"}".formatted(invitationToken)))
+                .andExpect(status().isOk());
     }
 
     private MvcResult register(String email, String displayName) throws Exception {
