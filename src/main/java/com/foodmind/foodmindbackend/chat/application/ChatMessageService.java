@@ -175,7 +175,10 @@ public class ChatMessageService {
         DelegationTokenIssuer.IssuedDelegationToken delegation = delegationTokenIssuer.issue(
                 userId,
                 traceId,
-                List.of(DelegationTokenIssuer.SCOPE_CHAT_SEARCH, DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE),
+                List.of(
+                        DelegationTokenIssuer.SCOPE_CHAT_SEARCH,
+                        DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE,
+                        DelegationTokenIssuer.SCOPE_CHAT_PROFILE),
                 sharedReferences.stream().map(ChatReference::id).toList());
         ChatAgentCommand command = new ChatAgentCommand(
                 CHAT_AGENT_CONTRACT_VERSION,

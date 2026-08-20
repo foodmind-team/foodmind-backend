@@ -133,6 +133,12 @@ class ChatMessageServiceAutomationTest {
                 null);
 
         assertThat(capturedCommand.get().recentTurns()).isEqualTo(turns);
+        ArgumentCaptor<List<String>> scopes = ArgumentCaptor.forClass(List.class);
+        verify(fixture.delegationTokenIssuer).issue(any(), anyString(), scopes.capture(), any());
+        assertThat(scopes.getValue()).containsExactly(
+                DelegationTokenIssuer.SCOPE_CHAT_SEARCH,
+                DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE,
+                DelegationTokenIssuer.SCOPE_CHAT_PROFILE);
         assertThat(result.suggestedQuestions()).containsExactly("Compare tofu and tempeh.");
         assertThat(result.suggestedDestinations()).containsExactly("EXPLORE");
         ArgumentCaptor<ValidatedChatAgentResult> validated = ArgumentCaptor.forClass(ValidatedChatAgentResult.class);
