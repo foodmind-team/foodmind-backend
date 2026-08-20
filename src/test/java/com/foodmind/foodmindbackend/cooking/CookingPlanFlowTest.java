@@ -231,6 +231,53 @@ class CookingPlanFlowTest extends PostgreSqlContainerSupport {
     }
 
     @Test
+    void finishArchivesADepletedLotSoItDisappearsFromInventory() throws Exception {
+        String accessToken = read(
+                register("cooking-finish-depleted@example.test", "Cooking Finish Depleted"),
+                "$.accessToken");
+        MvcResult lot = mockMvc.perform(post("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ingredientName": "Firm tofu",
+                                  "quantity": 300,
+                                  "unit": "g"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String lotId = read(lot, "$.lotId");
+        AGENT_RESPONSE.set(request -> CookingAgentResult.of(
+                readyPlanWithAllocation(request.requestId(), lotId),
+                json(readyPlanWithAllocation(request.requestId(), lotId))));
+
+        MvcResult generated = mockMvc.perform(post("/api/v1/cooking-plans/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .header("Idempotency-Key", "finish-depleted-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tofuRequest()))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        mockMvc.perform(post("/api/v1/cooking-plans/{planId}/finish", read(generated, "$.planId"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.finishedAt").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.totalItems").value(0));
+        assertThat(inventoryOnHand(lotId)).isEqualByComparingTo("0");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT archived_at IS NOT NULL FROM inventory_lot WHERE id = ?",
+                Boolean.class,
+                UUID.fromString(lotId))).isTrue();
+    }
+
+    @Test
     void needsConfirmationPersistsAndReadsBackQuestions() throws Exception {
         AGENT_RESPONSE.set(request -> confirmationAgentResult(request));
         String accessToken = read(register("cooking-confirm@example.test", "Cooking Confirm"), "$.accessToken");

@@ -11,6 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -96,6 +99,74 @@ class InventoryFlowTest extends PostgreSqlContainerSupport {
         assertThat(archived).isEqualTo(1);
     }
 
+    @Test
+    void jambalayaIngredientsMergeByTrimmedCaseInsensitiveName() throws Exception {
+        String accessToken = token(register("jambalaya-inventory@example.test", "Jambalaya Inventory"));
+        List<IngredientFixture> ingredients = List.of(
+                new IngredientFixture("vegetable oil", "1", "tbsp"),
+                new IngredientFixture("bacon", "180", "g"),
+                new IngredientFixture("andouille or smoked sausage", "200", "g"),
+                new IngredientFixture("chicken thigh", "300", "g"),
+                new IngredientFixture("prawns/shrimp", "12", "piece"),
+                new IngredientFixture("garlic", "4", "clove"),
+                new IngredientFixture("butter", "15", "g"),
+                new IngredientFixture("onion", "1", "piece"),
+                new IngredientFixture("celery", "2", "rib"),
+                new IngredientFixture("green capsicum / bell pepper", "2", "piece"),
+                new IngredientFixture("long grain rice", "1.25", "cup"),
+                new IngredientFixture("low-sodium chicken broth / stock", "625", "ml"),
+                new IngredientFixture("crushed canned tomato", "200", "g"),
+                new IngredientFixture("tomato paste", "2", "tbsp"),
+                new IngredientFixture("green onions", "1", "cup"),
+                new IngredientFixture("fresh thyme", "2", "tsp"),
+                new IngredientFixture("sweet paprika", "4", "tsp"),
+                new IngredientFixture("garlic powder", "1", "tsp"),
+                new IngredientFixture("onion powder", "1", "tsp"),
+                new IngredientFixture("cayenne powder", "0.5", "tsp"),
+                new IngredientFixture("black pepper", "0.5", "tsp"),
+                new IngredientFixture("salt", "0.5", "tsp"));
+
+        for (IngredientFixture ingredient : ingredients) {
+            MvcResult first = createLot(accessToken, ingredient.name(), ingredient.quantity(), ingredient.unit())
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            String lotId = read(first, "$.lotId");
+
+            createLot(
+                            accessToken,
+                            "  " + ingredient.name().toUpperCase(Locale.ROOT) + "  ",
+                            ingredient.quantity(),
+                            ingredient.unit())
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.lotId").value(lotId));
+
+            BigDecimal onHand = jdbcTemplate.queryForObject(
+                    "SELECT on_hand FROM inventory_lot WHERE id = ?",
+                    BigDecimal.class,
+                    UUID.fromString(lotId));
+            assertThat(onHand).isEqualByComparingTo(
+                    new BigDecimal(ingredient.quantity()).multiply(new BigDecimal("2")));
+        }
+
+        mockMvc.perform(get("/api/v1/inventory/lots")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalItems").value(ingredients.size()))
+                .andExpect(jsonPath("$.items.length()").value(ingredients.size()));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions createLot(
+            String accessToken,
+            String ingredientName,
+            String quantity,
+            String unit) throws Exception {
+        return mockMvc.perform(post("/api/v1/inventory/lots")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(lotRequest(ingredientName, quantity, unit, null)));
+    }
+
     private MvcResult register(String email, String displayName) throws Exception {
         return mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,5 +205,8 @@ class InventoryFlowTest extends PostgreSqlContainerSupport {
 
     private String bearer(String accessToken) {
         return "Bearer " + accessToken;
+    }
+
+    private record IngredientFixture(String name, String quantity, String unit) {
     }
 }

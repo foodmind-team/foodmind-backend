@@ -42,7 +42,22 @@ public class ConsumeCookingPlanInventory {
         for (Allocation row : rows) {
             int claimed = jdbc.update("INSERT INTO cooking_plan_inventory_consumption (id,plan_id,allocation_id,quantity) VALUES (:id,:planId,:allocationId,:quantity) ON CONFLICT (allocation_id) DO NOTHING", new MapSqlParameterSource().addValue("id",UUID.randomUUID()).addValue("planId",planId).addValue("allocationId",row.id()).addValue("quantity",row.quantity()));
             if (claimed == 0) continue;
-            int updated = jdbc.update("UPDATE inventory_lot SET on_hand=on_hand-:quantity,version=version+1 WHERE id=:lotId AND user_id=:userId AND on_hand-reserved>=:quantity", new MapSqlParameterSource().addValue("quantity",row.quantity()).addValue("lotId",row.lotId()).addValue("userId",userId));
+            int updated = jdbc.update("""
+                    UPDATE inventory_lot
+                    SET on_hand = on_hand - :quantity,
+                        archived_at = CASE
+                            WHEN on_hand - :quantity = 0 THEN CURRENT_TIMESTAMP
+                            ELSE archived_at
+                        END,
+                        version = version + 1
+                    WHERE id = :lotId
+                      AND user_id = :userId
+                      AND archived_at IS NULL
+                      AND on_hand - reserved >= :quantity
+                    """, new MapSqlParameterSource()
+                    .addValue("quantity", row.quantity())
+                    .addValue("lotId", row.lotId())
+                    .addValue("userId", userId));
             if (updated != 1) throw new ApiException(ErrorCode.CONFLICT, "Inventory changed; regenerate the plan before consuming it.");
             consumed++;
         }
