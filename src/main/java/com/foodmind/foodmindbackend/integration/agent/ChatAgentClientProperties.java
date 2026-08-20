@@ -17,7 +17,7 @@ public class ChatAgentClientProperties {
     private String baseUrl = "http://127.0.0.1:65535";
     private String endpointPath = "/internal/v1/chat/generate";
     private String serviceToken = "";
-    private String contractVersion = "chat-agent-v1";
+    private String contractVersion = "chat-agent-v2";
     private Duration connectTimeout = Duration.ofMillis(250);
     private Duration readTimeout = Duration.ofMillis(800);
     private int maxResponseBytes = 16384;

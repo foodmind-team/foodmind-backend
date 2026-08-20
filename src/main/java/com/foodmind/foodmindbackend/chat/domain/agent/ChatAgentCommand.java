@@ -1,7 +1,6 @@
 package com.foodmind.foodmindbackend.chat.domain.agent;
 
 import com.foodmind.foodmindbackend.chat.domain.ChatReference;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -22,7 +21,6 @@ public record ChatAgentCommand(
         String traceId,
         OffsetDateTime expiresAt,
         String delegationToken,
-        ChatRoute requestedRoute,
         String message,
         List<ChatReference> sharedReferences,
         List<ChatConversationTurn> recentTurns) {
@@ -36,7 +34,6 @@ public record ChatAgentCommand(
             String traceId,
             OffsetDateTime expiresAt,
             String delegationToken,
-            ChatRoute requestedRoute,
             String message,
             List<ChatReference> sharedReferences) {
         this(
@@ -48,7 +45,6 @@ public record ChatAgentCommand(
                 traceId,
                 expiresAt,
                 delegationToken,
-                requestedRoute,
                 message,
                 sharedReferences,
                 List.of());

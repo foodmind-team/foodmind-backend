@@ -1,6 +1,5 @@
 package com.foodmind.foodmindbackend.integration.agent.dto;
 
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -21,7 +20,6 @@ public record AgentChatRequest(
         String traceId,
         OffsetDateTime expiresAt,
         String message,
-        ChatRoute requestedRoute,
         String delegationToken,
         List<AgentChatReferenceRequest> sharedReferences,
         List<AgentChatTurnRequest> recentTurns) {
@@ -35,7 +33,6 @@ public record AgentChatRequest(
                 command.traceId(),
                 command.expiresAt(),
                 command.message(),
-                command.requestedRoute(),
                 command.delegationToken(),
                 command.sharedReferences().stream().map(AgentChatReferenceRequest::from).toList(),
                 command.recentTurns().stream().map(AgentChatTurnRequest::from).toList());

@@ -7890,7 +7890,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Find the food and place references I shared.\",\n  \"route\": \"SEARCH\"\n}",
+              "raw": "{\n  \"content\": \"Find the food and place references I shared.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7963,7 +7963,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Compare the shared product and place using only available evidence.\",\n  \"route\": \"COMPARE\",\n  \"referenceIds\": [\n    \"{{chatReferenceId}}\"\n  ]\n}",
+              "raw": "{\n  \"content\": \"Compare the shared product and place using only available evidence.\",\n  \"referenceIds\": [\n    \"{{chatReferenceId}}\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8131,7 +8131,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Summarise the group food record I shared.\",\n  \"route\": \"SUMMARY\",\n  \"referenceIds\": [\n    \"{{chatReferenceId}}\"\n  ]\n}",
+              "raw": "{\n  \"content\": \"Summarise the group food record I shared.\",\n  \"referenceIds\": [\n    \"{{chatReferenceId}}\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8195,7 +8195,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Recommend a new dinner and cook it for me.\",\n  \"route\": \"RECOMMENDATION\"\n}",
+              "raw": "{\n  \"content\": \"Recommend a new dinner and cook it for me.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
