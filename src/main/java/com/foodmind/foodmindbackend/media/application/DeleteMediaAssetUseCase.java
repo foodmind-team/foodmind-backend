@@ -5,7 +5,6 @@ import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.media.application.port.MediaAssetRepository;
 import com.foodmind.foodmindbackend.media.application.port.ObjectStoragePort;
 import com.foodmind.foodmindbackend.media.domain.model.MediaAsset;
-import com.foodmind.foodmindbackend.media.domain.model.MediaAssetStatus;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -36,9 +35,6 @@ public class DeleteMediaAssetUseCase {
     public void delete(UUID ownerUserId, UUID assetId) {
         MediaAsset asset = repository.findOwned(ownerUserId, assetId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (asset.status() == MediaAssetStatus.DELETED) {
-            return;
-        }
         MediaAsset deleted = repository.softDelete(ownerUserId, assetId, OffsetDateTime.now(clock))
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         try {

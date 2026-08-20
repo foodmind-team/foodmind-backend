@@ -8,8 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.foodmind.foodmindbackend.common.security.DelegationTokenIssuer;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@org.springframework.test.context.TestPropertySource(properties = "foodmind.security.internal-service.token=test-service-token")
 class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
 
     @Autowired
@@ -39,6 +43,9 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DelegationTokenIssuer delegationTokenIssuer;
 
     @BeforeEach
     void cleanUserTables() {
@@ -116,6 +123,68 @@ class UserPreferenceFlowTest extends PostgreSqlContainerSupport {
                 .andExpect(jsonPath("$.likedCuisineCodes").isEmpty())
                 .andExpect(jsonPath("$.cookingRegion").value("SG"))
                 .andExpect(jsonPath("$.allergens").isEmpty());
+    }
+
+    @Test
+    void delegatedProfileIsScopeProtectedAndExcludesUnnecessaryFields() throws Exception {
+        String accessToken = read(register("chat-profile@example.test", "Chat Profile"), "$.accessToken");
+        String userId = jdbcTemplate.queryForObject(
+                "SELECT id::text FROM app_user WHERE email = 'chat-profile@example.test'", String.class);
+        putPreferences(accessToken, """
+                {
+                  "budgetMin": 5.00,
+                  "budgetMax": 18.00,
+                  "currency": "SGD",
+                  "spiceTolerance": 2,
+                  "preferredArea": "Clementi",
+                  "preferredLatitude": 1.315000,
+                  "preferredLongitude": 103.765000,
+                  "maxDistanceKm": 4.5,
+                  "foodGoal": "BALANCED",
+                  "drinkSweetnessPreference": "LESS_SWEET",
+                  "drinkIcePreference": "NO_ICE",
+                  "cookingRegion": "SG",
+                  "likedCuisineCodes": ["JAPANESE"],
+                  "dislikedCuisineCodes": ["MALAY"],
+                  "dietaryTagCodes": ["VEGETARIAN"],
+                  "allergens": [{"code": "PEANUT", "severity": "SEVERE"}],
+                  "preferredMealTypes": ["DINNER"]
+                }
+                """).andExpect(status().isOk());
+
+        String profileDelegation = delegationTokenIssuer.issue(
+                        UUID.fromString(userId),
+                        "chat-profile-trace",
+                        List.of(DelegationTokenIssuer.SCOPE_CHAT_PROFILE),
+                        List.of())
+                .token();
+        mockMvc.perform(get("/internal/v1/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer(profileDelegation)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budgetMax").value(18.00))
+                .andExpect(jsonPath("$.spiceTolerance").value(2))
+                .andExpect(jsonPath("$.dietaryTagCodes[0]").value("VEGETARIAN"))
+                .andExpect(jsonPath("$.allergens[0].code").value("PEANUT"))
+                .andExpect(jsonPath("$.userId").doesNotExist())
+                .andExpect(jsonPath("$.preferredLatitude").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").doesNotExist())
+                .andExpect(jsonPath("$.version").doesNotExist());
+
+        String searchOnlyDelegation = delegationTokenIssuer.issue(
+                        UUID.fromString(userId),
+                        "chat-profile-trace",
+                        List.of(DelegationTokenIssuer.SCOPE_CHAT_SEARCH),
+                        List.of())
+                .token();
+        mockMvc.perform(get("/internal/v1/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer(searchOnlyDelegation)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/internal/v1/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("test-service-token"))
+                        .header("X-FoodMind-Delegation", bearer("forged")))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

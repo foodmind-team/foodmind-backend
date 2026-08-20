@@ -4,7 +4,6 @@ import com.foodmind.foodmindbackend.chat.application.port.ChatMessageContextQuer
 import com.foodmind.foodmindbackend.chat.domain.ChatMessage;
 import com.foodmind.foodmindbackend.chat.domain.ChatMessageSource;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourceType;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatConversationTurn;
 import com.foodmind.foodmindbackend.common.error.ApiException;
@@ -82,7 +81,7 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
     @Override
     public Optional<ChatMessage> findOwnedMessage(UUID userId, UUID sessionId, UUID messageId) {
         return jdbcTemplate.query("""
-                SELECT message.id, message.session_id, message.role, message.content, message.route,
+                SELECT message.id, message.session_id, message.role, message.content,
                        message.response_status, message.correlation_id, message.agent_trace_id, message.created_at,
                        message.suggested_questions, message.suggested_destinations
                 FROM chat_message message
@@ -103,7 +102,6 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -142,11 +140,47 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
                        reference.food_product_id,
                        reference.place_id,
                        coalesce(record.meal_name_snapshot, product.name, place.name) AS title,
-                       left(coalesce(record.comment, product.description, place.area, ''), 500) AS snippet
+                       case reference.source_type
+                           when 'FOOD_RECORD' then left(coalesce(nullif(concat_ws('; ',
+                               case when nullif(btrim(record.place_name_snapshot), '') is not null
+                                   then 'at ' || btrim(record.place_name_snapshot) end,
+                               case when record.occurred_at is not null
+                                   then 'occurred at ' || record.occurred_at::text end,
+                               case when record.price is not null
+                                   then concat_ws(' ', 'price', record.price::text, nullif(btrim(record.currency), '')) end,
+                               case when record.rating is not null
+                                   then 'rating ' || record.rating::text || '/5' end,
+                               case when record.would_eat_again is not null
+                                   then 'would_eat_again=' || record.would_eat_again::text end,
+                               case when nullif(btrim(record.comment), '') is not null
+                                   then 'comment: ' || btrim(record.comment) end
+                           ), ''), record.meal_name_snapshot), 4000)
+                           when 'FOOD_PRODUCT' then left(coalesce(nullif(concat_ws('; ',
+                               case when nullif(btrim(product.brand), '') is not null
+                                   then 'brand ' || btrim(product.brand) end,
+                               case when nullif(btrim(product.description), '') is not null
+                                   then 'description: ' || btrim(product.description) end,
+                               case when product.price is not null
+                                   then concat_ws(' ', 'price', product.price::text, nullif(btrim(product.currency), '')) end,
+                               case when nullif(btrim(product_place.name), '') is not null
+                                   then 'place ' || btrim(product_place.name) end
+                           ), ''), product.name), 4000)
+                           when 'PLACE' then left(coalesce(nullif(concat_ws('; ',
+                               case when nullif(btrim(place.place_type), '') is not null
+                                   then 'type ' || btrim(place.place_type) end,
+                               case when nullif(btrim(place.area), '') is not null
+                                   then 'area ' || btrim(place.area) end,
+                               case when nullif(btrim(place.address_text), '') is not null
+                                   then 'address ' || btrim(place.address_text) end,
+                               case when place.price_band is not null
+                                   then 'price band ' || place.price_band::text end
+                           ), ''), place.name), 4000)
+                       end AS snippet
                 FROM chat_message_source source
                 JOIN chat_reference reference ON reference.id = source.reference_id
                 LEFT JOIN food_record record ON record.id = reference.food_record_id
                 LEFT JOIN food_product product ON product.id = reference.food_product_id
+                LEFT JOIN place product_place ON product_place.id = product.place_id
                 LEFT JOIN place place ON place.id = reference.place_id
                 WHERE source.session_id = :sessionId
                   AND source.message_id = :messageId
@@ -159,14 +193,12 @@ public class JdbcChatMessageContextQuery implements ChatMessageContextQuery {
     }
 
     private ChatMessage messageRow(ResultSet rs, int rowNum) throws SQLException {
-        String route = rs.getString("route");
         String responseStatus = rs.getString("response_status");
         return new ChatMessage(
                 rs.getObject("id", UUID.class),
                 rs.getObject("session_id", UUID.class),
                 rs.getString("role"),
                 rs.getString("content"),
-                route == null ? null : ChatRoute.valueOf(route),
                 responseStatus == null ? null : ChatResponseStatus.valueOf(responseStatus),
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("agent_trace_id"),

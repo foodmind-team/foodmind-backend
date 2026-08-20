@@ -14,6 +14,8 @@ import com.foodmind.foodmindbackend.recipe.importing.domain.RecipeImportQuestion
 import com.foodmind.foodmindbackend.recipe.importing.domain.RecipeImportStatus;
 import com.foodmind.foodmindbackend.support.PostgreSqlContainerSupport;
 import com.jayway.jsonpath.JsonPath;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -180,6 +182,12 @@ class RecipeImportFlowTest extends PostgreSqlContainerSupport {
 
     @TestConfiguration
     static class StubAgentConfiguration {
+        @Bean
+        @Primary
+        Clock recipeImportTestClock() {
+            return Clock.offset(Clock.systemUTC(), Duration.ofMinutes(1));
+        }
+
         @Bean
         @Primary
         RecipeImportAgentPort recipeImportAgentPort() {

@@ -7,6 +7,8 @@ import com.foodmind.foodmindbackend.recommendation.domain.CleanlinessEvidence;
 import com.foodmind.foodmindbackend.recommendation.domain.EvaluatedCandidate;
 import com.foodmind.foodmindbackend.recommendation.domain.MoneyAmount;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationCandidateResult;
+import com.foodmind.foodmindbackend.recommendation.domain.RecommendationDecisionFactor;
+import com.foodmind.foodmindbackend.recommendation.domain.RecommendationDecisionProfile;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationResult;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationRequestContext;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationSessionSummary;
@@ -30,6 +32,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -232,8 +235,8 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     @Override
     public Optional<RecommendationResult> findResult(UUID userId, UUID sessionId, String traceId) {
         Optional<SessionRow> session = jdbcTemplate.query("""
-                SELECT id, status, model_status, model_version, fallback_status, fallback_version,
-                       created_at, completed_at
+                SELECT id, group_id, request_context::text AS request_context, status, model_status,
+                       model_version, fallback_status, fallback_version, created_at, completed_at
                 FROM recommendation_session
                 WHERE id = :sessionId
                   AND user_id = :userId
@@ -257,6 +260,7 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                 session.get().fallbackVersion(),
                 session.get().createdAt(),
                 session.get().completedAt(),
+                decisionProfile(session.get(), groupMemberEvidenceCount(sessionId)),
                 candidates(sessionId)));
     }
 
@@ -483,6 +487,8 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
     private SessionRow sessionRow(ResultSet rs, int rowNum) throws SQLException {
         return new SessionRow(
                 rs.getObject("id", UUID.class),
+                rs.getObject("group_id", UUID.class),
+                rs.getString("request_context"),
                 rs.getString("status"),
                 rs.getString("model_status"),
                 rs.getString("model_version"),
@@ -490,6 +496,31 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
                 rs.getString("fallback_version"),
                 rs.getObject("created_at", OffsetDateTime.class),
                 rs.getObject("completed_at", OffsetDateTime.class));
+    }
+
+    private int groupMemberEvidenceCount(UUID sessionId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM((evidence_snapshot ->> 'groupRecordCount')::int), 0)::int
+                FROM recommendation_candidate
+                WHERE session_id = :sessionId
+                  AND eligibility_status = 'RETURNED'
+                """,
+                new MapSqlParameterSource("sessionId", sessionId),
+                Integer.class);
+        return count == null ? 0 : count;
+    }
+
+    private RecommendationDecisionProfile decisionProfile(SessionRow session, int groupMemberEvidenceCount) {
+        List<RecommendationDecisionFactor> factors = new ArrayList<>();
+        try {
+            JsonNode profile = objectMapper.readTree(session.requestContext()).path("decisionProfile");
+            for (JsonNode factor : profile.path("appliedFactors")) {
+                factors.add(RecommendationDecisionFactor.valueOf(factor.asText()));
+            }
+        } catch (JacksonException | IllegalArgumentException exception) {
+            throw new IllegalStateException("Failed to read persisted recommendation decision profile.", exception);
+        }
+        return RecommendationDecisionProfile.from(factors, session.groupId() != null, groupMemberEvidenceCount);
     }
 
     private RecommendationSessionSummary summaryRow(ResultSet rs, int rowNum) throws SQLException {
@@ -602,6 +633,8 @@ public class JdbcRecommendationSessionRepository implements RecommendationSessio
 
     private record SessionRow(
             UUID id,
+            UUID groupId,
+            String requestContext,
             String status,
             String modelStatus,
             String modelVersion,

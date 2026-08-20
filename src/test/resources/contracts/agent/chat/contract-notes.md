@@ -1,6 +1,6 @@
 # Chat Agent Contract Notes
 
-Backend sends `chat-agent-v1` requests with a service token plus a short-lived
+Backend sends `chat-agent-v2` requests with a service token plus a short-lived
 delegation token for internal tool calls. The Agent must echo `requestId`,
 `sessionId`, `userMessageId`, and `traceId`.
 

@@ -38,6 +38,16 @@ public record GenerateRecommendationRequest(
         return (maxBudget == null) == (currency == null);
     }
 
+    @AssertTrue(message = "latitude and longitude must either both be provided or both be omitted")
+    public boolean isCoordinatePairConsistent() {
+        return (latitude == null) == (longitude == null);
+    }
+
+    @AssertTrue(message = "maxDistanceKm requires latitude and longitude")
+    public boolean isDistanceCoordinatesConsistent() {
+        return maxDistanceKm == null || (latitude != null && longitude != null);
+    }
+
     public RecommendationRequestContext toContext() {
         RecommendationConstraintsRequest safeConstraints = constraints == null
                 ? new RecommendationConstraintsRequest(null, null, null, null)

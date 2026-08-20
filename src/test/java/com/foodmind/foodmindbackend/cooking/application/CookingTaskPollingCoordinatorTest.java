@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.foodmind.foodmindbackend.cooking.application.port.CookingAgentPort;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
+import com.foodmind.foodmindbackend.cooking.domain.CookingPlanExecution;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanResult;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
@@ -327,6 +328,36 @@ class CookingTaskPollingCoordinatorTest {
 
         @Override
         public long countOwned(UUID userId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<CookingPlanSummary> findSavedPage(UUID userId, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long countSaved(UUID userId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<CookingPlanExecution> findExecution(UUID userId, UUID planId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void setSaved(UUID userId, UUID planId, boolean saved, boolean resetProgress) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void updateExecutionStep(UUID userId, UUID planId, String stepId, String status, long expectedVersion) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void resetExecution(UUID userId, UUID planId, long expectedVersion) {
             throw new UnsupportedOperationException();
         }
 

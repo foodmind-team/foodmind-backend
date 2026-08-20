@@ -3,9 +3,11 @@ package com.foodmind.foodmindbackend.cooking.api;
 import com.foodmind.foodmindbackend.common.api.PageResponse;
 import com.foodmind.foodmindbackend.common.security.FoodMindPrincipal;
 import com.foodmind.foodmindbackend.cooking.api.request.GenerateCookingPlanRequest;
+import com.foodmind.foodmindbackend.cooking.api.request.UpdateCookingPlanExecutionRequest;
 import com.foodmind.foodmindbackend.cooking.api.request.SubmitDecisionsRequest.QuestionAnswer;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanAsyncAcceptedResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanInventoryConsumptionResponse;
+import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanExecutionResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanSummaryResponse;
 import com.foodmind.foodmindbackend.cooking.api.response.CookingPlanTaskProgressResponse;
@@ -15,6 +17,7 @@ import com.foodmind.foodmindbackend.cooking.application.ConsumeCookingPlanInvent
 import com.foodmind.foodmindbackend.cooking.application.GenerateCookingPlan;
 import com.foodmind.foodmindbackend.cooking.application.GetCookingPlan;
 import com.foodmind.foodmindbackend.cooking.application.GetCookingPlanTask;
+import com.foodmind.foodmindbackend.cooking.application.ManageCookingPlanExecution;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -27,8 +30,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,18 +58,21 @@ public class CookingPlanController {
     private final GetCookingPlanTask getCookingPlanTask;
     private final CancelCookingPlanTask cancelCookingPlanTask;
     private final ConsumeCookingPlanInventory consumeCookingPlanInventory;
+    private final ManageCookingPlanExecution manageCookingPlanExecution;
 
     public CookingPlanController(
             GenerateCookingPlan generateCookingPlan,
             GetCookingPlan getCookingPlan,
             GetCookingPlanTask getCookingPlanTask,
             CancelCookingPlanTask cancelCookingPlanTask,
-            ConsumeCookingPlanInventory consumeCookingPlanInventory) {
+            ConsumeCookingPlanInventory consumeCookingPlanInventory,
+            ManageCookingPlanExecution manageCookingPlanExecution) {
         this.generateCookingPlan = generateCookingPlan;
         this.getCookingPlan = getCookingPlan;
         this.getCookingPlanTask = getCookingPlanTask;
         this.cancelCookingPlanTask = cancelCookingPlanTask;
         this.consumeCookingPlanInventory = consumeCookingPlanInventory;
+        this.manageCookingPlanExecution = manageCookingPlanExecution;
     }
 
     @PostMapping("/generate")
@@ -128,6 +137,14 @@ public class CookingPlanController {
         return CookingPlanInventoryConsumptionResponse.from(consumeCookingPlanInventory.handle(principal.id(), planId));
     }
 
+    @PostMapping("/{planId}/finish")
+    CookingPlanResponse finish(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        consumeCookingPlanInventory.handle(principal.id(), planId);
+        return CookingPlanResponse.from(getCookingPlan.handle(principal.id(), planId));
+    }
+
     @GetMapping("/{planId}")
     CookingPlanResponse get(
             @AuthenticationPrincipal FoodMindPrincipal principal,
@@ -167,5 +184,60 @@ public class CookingPlanController {
                 page,
                 size,
                 result.totalItems());
+    }
+
+    @GetMapping("/saved")
+    PageResponse<CookingPlanSummaryResponse> saved(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PageResponse.MAX_PAGE_SIZE) int size) {
+        PageResponse<com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary> result =
+                getCookingPlan.saved(principal.id(), page, size);
+        return PageResponse.of(
+                result.items().stream().map(CookingPlanSummaryResponse::from).toList(),
+                page,
+                size,
+                result.totalItems());
+    }
+
+    @GetMapping("/{planId}/execution")
+    CookingPlanExecutionResponse execution(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        return CookingPlanExecutionResponse.from(manageCookingPlanExecution.get(principal.id(), planId));
+    }
+
+    @PutMapping("/{planId}/saved")
+    CookingPlanExecutionResponse save(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId) {
+        return CookingPlanExecutionResponse.from(manageCookingPlanExecution.save(principal.id(), planId));
+    }
+
+    @DeleteMapping("/{planId}/saved")
+    CookingPlanExecutionResponse removeSaved(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId,
+            @RequestParam(defaultValue = "false") boolean resetProgress) {
+        return CookingPlanExecutionResponse.from(
+                manageCookingPlanExecution.remove(principal.id(), planId, resetProgress));
+    }
+
+    @PatchMapping("/{planId}/execution")
+    CookingPlanExecutionResponse updateExecution(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId,
+            @Valid @RequestBody UpdateCookingPlanExecutionRequest request) {
+        return CookingPlanExecutionResponse.from(manageCookingPlanExecution.updateStep(
+                principal.id(), planId, request.stepId(), request.status(), request.expectedVersion()));
+    }
+
+    @PostMapping("/{planId}/execution/reset")
+    CookingPlanExecutionResponse resetExecution(
+            @AuthenticationPrincipal FoodMindPrincipal principal,
+            @PathVariable UUID planId,
+            @RequestParam @Min(0) long expectedVersion) {
+        return CookingPlanExecutionResponse.from(
+                manageCookingPlanExecution.reset(principal.id(), planId, expectedVersion));
     }
 }

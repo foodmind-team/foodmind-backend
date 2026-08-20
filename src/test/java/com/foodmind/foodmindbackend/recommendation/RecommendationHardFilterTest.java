@@ -32,11 +32,11 @@ class RecommendationHardFilterTest {
     }
 
     @Test
-    void missingCleanlinessEvidenceCannotSatisfyThreshold() {
+    void missingCleanlinessEvidenceRemainsEligibleWhenItIsOnlyASoftPreference() {
         CandidateEvidence candidate = candidateWithoutCleanliness();
 
         assertThat(pipeline.evaluate(request(List.of(), List.of()), preferencesWithCleanlinessThreshold(), candidate).filterCode())
-                .isEqualTo(FilterCode.CLEANLINESS_EVIDENCE);
+                .isNull();
     }
 
     @Test

@@ -58,7 +58,6 @@ public class AgentResultValidator {
 
         Set<UUID> seenIds = new HashSet<>();
         Set<Integer> seenRanks = new HashSet<>();
-        BigDecimal previousScore = null;
         for (AgentCandidateResult candidate : candidates) {
             require(candidate.candidateId() != null, AgentFailureCode.UNKNOWN_ID);
             require(eligibleCandidates.containsKey(candidate.candidateId()), AgentFailureCode.UNKNOWN_ID);
@@ -69,9 +68,6 @@ public class AgentResultValidator {
             require(candidate.modelScore() != null
                     && candidate.modelScore().compareTo(BigDecimal.ZERO) >= 0
                     && candidate.modelScore().compareTo(BigDecimal.ONE) <= 0, AgentFailureCode.SCHEMA_MISMATCH);
-            require(previousScore == null || previousScore.compareTo(candidate.modelScore()) >= 0,
-                    AgentFailureCode.SCHEMA_MISMATCH);
-            previousScore = candidate.modelScore();
             require(candidate.reasonCodes().size() > 0
                     && candidate.reasonCodes().size() <= MAX_REASON_CODES, AgentFailureCode.INVALID_REASON);
             validateReasons(eligibleCandidates.get(candidate.candidateId()).evidence(), candidate);
@@ -79,6 +75,20 @@ public class AgentResultValidator {
         }
         for (int rank = 1; rank <= candidates.size(); rank++) {
             require(seenRanks.contains(rank), AgentFailureCode.SCHEMA_MISMATCH);
+        }
+        List<AgentCandidateResult> rankedCandidates = candidates.stream()
+                .sorted(Comparator.comparingInt(AgentCandidateResult::rank))
+                .toList();
+        for (int index = 1; index < rankedCandidates.size(); index++) {
+            AgentCandidateResult previous = rankedCandidates.get(index - 1);
+            AgentCandidateResult current = rankedCandidates.get(index);
+            boolean previousWantToTry = eligibleCandidates.get(previous.candidateId()).evidence().wantToTry();
+            boolean currentWantToTry = eligibleCandidates.get(current.candidateId()).evidence().wantToTry();
+            boolean correctlyOrdered = (previousWantToTry && !currentWantToTry)
+                    || (previousWantToTry == currentWantToTry
+                    && previous.modelScore().compareTo(current.modelScore()) >= 0);
+            require(correctlyOrdered,
+                    AgentFailureCode.SCHEMA_MISMATCH);
         }
         if (!candidates.isEmpty()) {
             AgentCandidateResult lead = candidates.stream()
@@ -92,8 +102,7 @@ public class AgentResultValidator {
                 result.modelStatus(),
                 result.featureSchemaVersion(),
                 result.agentTraceId(),
-                candidates.stream()
-                        .sorted(Comparator.comparingInt(AgentCandidateResult::rank))
+                rankedCandidates.stream()
                         .map(candidate -> new ValidatedAgentCandidate(
                                 candidate.candidateId(),
                                 candidate.recommendationType(),

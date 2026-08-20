@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * @description: JDBC implementation with owner-scoped lifecycle updates.
@@ -76,17 +77,19 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
     }
 
     @Override
+    @Transactional
     public Optional<MediaAsset> softDelete(UUID ownerUserId, UUID assetId, OffsetDateTime deletedAt) {
-        int updated = jdbcTemplate.update("""
+        jdbcTemplate.update("""
                         UPDATE media_asset
                         SET status = 'DELETED', deleted_at = :deletedAt
                         WHERE id = :id AND owner_user_id = :ownerUserId AND status IN ('PENDING', 'READY')
                         """, new MapSqlParameterSource().addValue("id", assetId).addValue("ownerUserId", ownerUserId)
                 .addValue("deletedAt", deletedAt));
-        if (updated == 0) {
-            return findOwned(ownerUserId, assetId);
+        Optional<MediaAsset> asset = findOwned(ownerUserId, assetId);
+        if (asset.isPresent()) {
+            detachOwnedRecords(ownerUserId, assetId);
         }
-        return findOwned(ownerUserId, assetId);
+        return asset;
     }
 
     @Override
@@ -116,6 +119,26 @@ public class JdbcMediaAssetRepository implements MediaAssetRepository {
                 .addValue("objectKey", asset.objectKey()).addValue("contentType", asset.contentType())
                 .addValue("byteSize", asset.byteSize()).addValue("checksumSha256", asset.checksumSha256())
                 .addValue("createdAt", asset.createdAt());
+    }
+
+    private void detachOwnedRecords(UUID ownerUserId, UUID assetId) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("ownerUserId", ownerUserId)
+                .addValue("assetId", assetId);
+        jdbcTemplate.update("""
+                        UPDATE food_record
+                        SET media_asset_id = NULL,
+                            updated_at = CURRENT_TIMESTAMP,
+                            version = version + 1
+                        WHERE owner_user_id = :ownerUserId AND media_asset_id = :assetId
+                        """, parameters);
+        jdbcTemplate.update("""
+                        UPDATE drink_record
+                        SET media_asset_id = NULL,
+                            updated_at = CURRENT_TIMESTAMP,
+                            version = version + 1
+                        WHERE owner_user_id = :ownerUserId AND media_asset_id = :assetId
+                        """, parameters);
     }
 
     private MediaAsset mapAsset(java.sql.ResultSet rs) throws java.sql.SQLException {

@@ -28,6 +28,8 @@ public record CookingPlanResult(
         String errorMessage,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt,
+        OffsetDateTime finishedAt,
+        UUID reusedFromPlanId,
         List<Source> sources,
         List<TimelineTask> timeline,
         List<MiseEnPlaceItem> miseEnPlace,

@@ -1,12 +1,11 @@
 {
   "status": "SUCCEEDED",
-  "contractVersion": "chat-agent-v1",
+  "contractVersion": "chat-agent-v2",
   "requestId": "44000000-0000-4000-8000-000000000001",
   "sessionId": "44000000-0000-4000-8000-000000000002",
   "userMessageId": "44000000-0000-4000-8000-000000000003",
   "traceId": "44000000-0000-4000-8000-000000000004",
   "agentTraceId": "agent-chat-003",
-  "route": "OUT_OF_SCOPE",
   "responseStatus": "UNSUPPORTED",
   "answer": "That request is outside FoodMind Chat's food and FoodMind scope.",
   "sources": [],

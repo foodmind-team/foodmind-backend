@@ -66,6 +66,21 @@ public class WeeklyRecapQueryAdapter implements WeeklyRecapQuery {
                         rs.getBigDecimal("recommendation_would_eat_again_rate"), null, null, null, null, null)))
                 .stream().flatMap(List::stream).toList());
         metrics.addAll(jdbc.query("""
+                        SELECT cuisine_code, cuisine_name, meal_count
+                        FROM analytics_cuisine_period_v1
+                        WHERE user_id = :actorId
+                          AND aggregation_time_zone = :timeZone
+                          AND period_grain = 'WEEK'
+                          AND period_start_local = :weekStart
+                        ORDER BY cuisine_code
+                        """, parameters, (rs, rowNum) -> count(
+                MetricDefinition.CUISINE_DISTRIBUTION,
+                weekStart,
+                rs.getLong("meal_count"),
+                rs.getLong("meal_count"),
+                rs.getString("cuisine_code"),
+                rs.getString("cuisine_name"))));
+        metrics.addAll(jdbc.query("""
                         SELECT currency, priced_record_count, total_spend
                         FROM analytics_spending_period_v1
                         WHERE user_id = :actorId
@@ -81,6 +96,16 @@ public class WeeklyRecapQueryAdapter implements WeeklyRecapQuery {
     }
 
     private MetricValue count(MetricDefinition definition, LocalDate period, long value, long denominator) {
-        return definition.map(period, BigDecimal.valueOf(value), null, value, denominator, null, null);
+        return count(definition, period, value, denominator, null, null);
+    }
+
+    private MetricValue count(
+            MetricDefinition definition,
+            LocalDate period,
+            long value,
+            long denominator,
+            String dimension,
+            String dimensionLabel) {
+        return definition.map(period, BigDecimal.valueOf(value), null, value, denominator, dimension, dimensionLabel);
     }
 }

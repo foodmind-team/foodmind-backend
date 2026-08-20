@@ -9,7 +9,6 @@ import com.foodmind.foodmindbackend.chat.domain.ChatPage;
 import com.foodmind.foodmindbackend.chat.domain.ChatReference;
 import com.foodmind.foodmindbackend.chat.domain.ChatReferenceOrigin;
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.ChatSession;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourcePointer;
 import com.foodmind.foodmindbackend.chat.domain.ChatSourceResolution;
@@ -164,11 +163,11 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
         UUID correlationId = messageCorrelation(sessionId, userMessageId);
         jdbcTemplate.update("""
                 INSERT INTO chat_message (
-                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id,
+                    id, session_id, role, content, response_status, correlation_id, agent_trace_id,
                     suggested_questions, suggested_destinations
                 )
                 VALUES (
-                    :id, :sessionId, 'ASSISTANT', :content, :route, :responseStatus, :correlationId, :agentTraceId,
+                    :id, :sessionId, 'ASSISTANT', :content, :responseStatus, :correlationId, :agentTraceId,
                     CAST(:suggestedQuestions AS jsonb), CAST(:suggestedDestinations AS jsonb)
                 )
                 """,
@@ -176,7 +175,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         .addValue("id", assistantMessageId)
                         .addValue("sessionId", sessionId)
                         .addValue("content", result.answer())
-                        .addValue("route", result.route().name())
                         .addValue("responseStatus", result.responseStatus().name())
                         .addValue("correlationId", correlationId)
                         .addValue("agentTraceId", result.agentTraceId())
@@ -211,10 +209,10 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
         UUID correlationId = messageCorrelation(sessionId, userMessageId);
         jdbcTemplate.update("""
                 INSERT INTO chat_message (
-                    id, session_id, role, content, route, response_status, correlation_id, agent_trace_id
+                    id, session_id, role, content, response_status, correlation_id, agent_trace_id
                 )
                 VALUES (
-                    :id, :sessionId, 'ASSISTANT', :content, 'OUT_OF_SCOPE', 'FAILED', :correlationId, :agentTraceId
+                    :id, :sessionId, 'ASSISTANT', :content, 'FAILED', :correlationId, :agentTraceId
                 )
                 """,
                 new MapSqlParameterSource()
@@ -236,7 +234,7 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 .addValue("afterCreatedAt", after == null ? null : after.createdAt())
                 .addValue("afterId", after == null ? null : after.id());
         List<ChatMessage> rows = jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                SELECT id, session_id, role, content, response_status, correlation_id, agent_trace_id, created_at,
                        suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
@@ -259,7 +257,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -354,7 +351,20 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'FOOD_RECORD' AS source_type,
                        record.id AS source_id,
                        record.meal_name_snapshot AS title,
-                       left(coalesce(record.comment, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(record.place_name_snapshot), '') is not null
+                               then 'at ' || btrim(record.place_name_snapshot) end,
+                           case when record.occurred_at is not null
+                               then 'occurred at ' || record.occurred_at::text end,
+                           case when record.price is not null
+                               then concat_ws(' ', 'price', record.price::text, nullif(btrim(record.currency), '')) end,
+                           case when record.rating is not null
+                               then 'rating ' || record.rating::text || '/5' end,
+                           case when record.would_eat_again is not null
+                               then 'would_eat_again=' || record.would_eat_again::text end,
+                           case when nullif(btrim(record.comment), '') is not null
+                               then 'comment: ' || btrim(record.comment) end
+                       ), ''), record.meal_name_snapshot), 4000) AS snippet
                 FROM food_record record
                 LEFT JOIN trusted_group trusted_group ON trusted_group.id = record.group_id
                 WHERE record.id = :sourceId
@@ -387,8 +397,18 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'FOOD_PRODUCT' AS source_type,
                        product.id AS source_id,
                        product.name AS title,
-                       left(coalesce(product.description, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(product.brand), '') is not null
+                               then 'brand ' || btrim(product.brand) end,
+                           case when nullif(btrim(product.description), '') is not null
+                               then 'description: ' || btrim(product.description) end,
+                           case when product.price is not null
+                               then concat_ws(' ', 'price', product.price::text, nullif(btrim(product.currency), '')) end,
+                           case when nullif(btrim(place.name), '') is not null
+                               then 'place ' || btrim(place.name) end
+                       ), ''), product.name), 4000) AS snippet
                 FROM food_product product
+                LEFT JOIN place place ON place.id = product.place_id
                 WHERE product.id = :sourceId
                   AND product.curation_status = 'ACTIVE'
                 """,
@@ -403,7 +423,16 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                 SELECT 'PLACE' AS source_type,
                        place.id AS source_id,
                        place.name AS title,
-                       left(coalesce(place.area, ''), 500) AS snippet
+                       left(coalesce(nullif(concat_ws('; ',
+                           case when nullif(btrim(place.place_type), '') is not null
+                               then 'type ' || btrim(place.place_type) end,
+                           case when nullif(btrim(place.area), '') is not null
+                               then 'area ' || btrim(place.area) end,
+                           case when nullif(btrim(place.address_text), '') is not null
+                               then 'address ' || btrim(place.address_text) end,
+                           case when place.price_band is not null
+                               then 'price band ' || place.price_band::text end
+                       ), ''), place.name), 4000) AS snippet
                 FROM place
                 WHERE place.id = :sourceId
                   AND place.curation_status = 'ACTIVE'
@@ -474,7 +503,7 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
 
     private Optional<ChatMessage> findMessage(UUID sessionId, UUID messageId) {
         return jdbcTemplate.query("""
-                SELECT id, session_id, role, content, route, response_status, correlation_id, agent_trace_id, created_at,
+                SELECT id, session_id, role, content, response_status, correlation_id, agent_trace_id, created_at,
                        suggested_questions, suggested_destinations
                 FROM chat_message
                 WHERE session_id = :sessionId
@@ -491,7 +520,6 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
                         message.sessionId(),
                         message.role(),
                         message.content(),
-                        message.route(),
                         message.responseStatus(),
                         message.correlationId(),
                         message.agentTraceId(),
@@ -590,14 +618,12 @@ public class ChatQueryAdapter implements ChatRepository, ChatReferenceQuery {
     }
 
     private ChatMessage messageRow(ResultSet rs, int rowNum) throws SQLException {
-        String route = rs.getString("route");
         String responseStatus = rs.getString("response_status");
         return new ChatMessage(
                 rs.getObject("id", UUID.class),
                 rs.getObject("session_id", UUID.class),
                 rs.getString("role"),
                 rs.getString("content"),
-                route == null ? null : ChatRoute.valueOf(route),
                 responseStatus == null ? null : ChatResponseStatus.valueOf(responseStatus),
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("agent_trace_id"),

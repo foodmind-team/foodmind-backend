@@ -18,7 +18,6 @@ public record AgentChatResponse(
         UUID userMessageId,
         String traceId,
         String agentTraceId,
-        String route,
         String responseStatus,
         String answer,
         List<AgentChatSourceResponse> sources,

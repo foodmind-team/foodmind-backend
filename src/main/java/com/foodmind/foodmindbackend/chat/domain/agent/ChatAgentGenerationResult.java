@@ -1,7 +1,6 @@
 package com.foodmind.foodmindbackend.chat.domain.agent;
 
 import com.foodmind.foodmindbackend.chat.domain.ChatResponseStatus;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,7 +20,6 @@ public record ChatAgentGenerationResult(
         UUID userMessageId,
         String traceId,
         String agentTraceId,
-        ChatRoute route,
         ChatResponseStatus responseStatus,
         String answer,
         List<ChatAgentSourceResult> sources,
@@ -35,7 +33,6 @@ public record ChatAgentGenerationResult(
             UUID userMessageId,
             String traceId,
             String agentTraceId,
-            ChatRoute route,
             ChatResponseStatus responseStatus,
             String answer,
             List<ChatAgentSourceResult> sources) {
@@ -46,7 +43,6 @@ public record ChatAgentGenerationResult(
                 userMessageId,
                 traceId,
                 agentTraceId,
-                route,
                 responseStatus,
                 answer,
                 sources,
@@ -61,7 +57,6 @@ public record ChatAgentGenerationResult(
             UUID userMessageId,
             String traceId,
             String agentTraceId,
-            ChatRoute route,
             ChatResponseStatus responseStatus,
             String answer,
             List<ChatAgentSourceResult> sources,
@@ -76,7 +71,6 @@ public record ChatAgentGenerationResult(
                 userMessageId,
                 traceId,
                 agentTraceId,
-                route,
                 responseStatus,
                 answer,
                 sources == null ? List.of() : List.copyOf(sources),
@@ -101,7 +95,6 @@ public record ChatAgentGenerationResult(
                 userMessageId,
                 traceId,
                 agentTraceId,
-                null,
                 null,
                 null,
                 List.of(),

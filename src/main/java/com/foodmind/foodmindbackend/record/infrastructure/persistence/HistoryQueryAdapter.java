@@ -25,46 +25,18 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class HistoryQueryAdapter implements HistoryQuery {
 
-    private static final String FOOD_AUTHORISED_PREDICATE = """
+    private static final String FOOD_PERSONAL_HISTORY_PREDICATE = """
             fr.deleted_at IS NULL
             AND fr.occurred_at >= :fromUtcInclusive
             AND fr.occurred_at < :toUtcExclusive
-            AND (
-                fr.owner_user_id = :actorUserId
-                OR (
-                    fr.visibility = 'GROUP'
-                    AND EXISTS (
-                        SELECT 1
-                        FROM group_membership gm
-                        JOIN trusted_group tg ON tg.id = gm.group_id
-                        WHERE gm.group_id = fr.group_id
-                          AND gm.user_id = :actorUserId
-                          AND gm.status = 'ACTIVE'
-                          AND tg.status = 'ACTIVE'
-                    )
-                )
-            )
+            AND fr.owner_user_id = :actorUserId
             """;
 
-    private static final String DRINK_AUTHORISED_PREDICATE = """
+    private static final String DRINK_PERSONAL_HISTORY_PREDICATE = """
             dr.deleted_at IS NULL
             AND dr.occurred_at >= :fromUtcInclusive
             AND dr.occurred_at < :toUtcExclusive
-            AND (
-                dr.owner_user_id = :actorUserId
-                OR (
-                    dr.visibility = 'GROUP'
-                    AND EXISTS (
-                        SELECT 1
-                        FROM group_membership gm
-                        JOIN trusted_group tg ON tg.id = gm.group_id
-                        WHERE gm.group_id = dr.group_id
-                          AND gm.user_id = :actorUserId
-                          AND gm.status = 'ACTIVE'
-                          AND tg.status = 'ACTIVE'
-                    )
-                )
-            )
+            AND dr.owner_user_id = :actorUserId
             """;
 
     private static final String HISTORY_UNION = """
@@ -93,7 +65,7 @@ public class HistoryQueryAdapter implements HistoryQuery {
                    dr.would_buy_again AS repeat_intent
             FROM drink_record dr
             WHERE %s
-            """.formatted(FOOD_AUTHORISED_PREDICATE, DRINK_AUTHORISED_PREDICATE);
+            """.formatted(FOOD_PERSONAL_HISTORY_PREDICATE, DRINK_PERSONAL_HISTORY_PREDICATE);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 

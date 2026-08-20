@@ -29,6 +29,7 @@ public class DelegationTokenIssuer {
 
     public static final String SCOPE_CHAT_SEARCH = "CHAT_SEARCH";
     public static final String SCOPE_CHAT_REFERENCE_RESOLVE = "CHAT_REFERENCE_RESOLVE";
+    public static final String SCOPE_CHAT_PROFILE = "CHAT_PROFILE";
 
     private final SecurityProperties properties;
     private final Clock clock;

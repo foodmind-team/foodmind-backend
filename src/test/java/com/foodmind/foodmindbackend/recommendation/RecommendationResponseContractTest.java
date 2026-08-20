@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.foodmind.foodmindbackend.recommendation.api.response.RecommendationResponse;
 import com.foodmind.foodmindbackend.recommendation.domain.RecommendationResult;
+import com.foodmind.foodmindbackend.recommendation.domain.RecommendationDecisionProfile;
+import com.foodmind.foodmindbackend.recommendation.domain.RecommendationDecisionMode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
@@ -43,6 +45,8 @@ class RecommendationResponseContractTest {
         assertThat(map(properties.get("modelVersion"))).containsEntry("nullable", true);
         assertThat(map(properties.get("fallbackVersion"))).containsEntry("nullable", true);
         assertThat(map(properties.get("completedAt"))).containsEntry("nullable", true);
+        assertThat(properties).containsKey("decisionProfile");
+        assertThat(list(schema.get("required"))).contains("decisionProfile");
         assertThat(list(schema.get("required"))).doesNotContain("modelVersion", "fallbackVersion", "completedAt");
     }
 
@@ -65,6 +69,7 @@ class RecommendationResponseContractTest {
                 fallbackVersion,
                 NOW,
                 completed ? NOW.plusSeconds(1) : null,
+                new RecommendationDecisionProfile(RecommendationDecisionMode.DEFAULT, List.of(), 0),
                 List.of());
 
         JsonNode json = JSON.readTree(JSON.writeValueAsString(RecommendationResponse.from(result)));
@@ -76,6 +81,7 @@ class RecommendationResponseContractTest {
         assertThat(json.path("createdAt").asText()).isNotBlank();
         assertThat(textOrNull(json, "completedAt") != null).isEqualTo(completed);
         assertThat(json.path("items").isArray()).isTrue();
+        assertThat(json.path("decisionProfile").path("mode").asText()).isEqualTo("DEFAULT");
     }
 
     private static Stream<Arguments> reachableStates() {

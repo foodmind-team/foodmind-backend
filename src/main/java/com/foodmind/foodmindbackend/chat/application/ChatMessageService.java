@@ -10,7 +10,6 @@ import com.foodmind.foodmindbackend.chat.domain.ChatCursor;
 import com.foodmind.foodmindbackend.chat.domain.ChatMessage;
 import com.foodmind.foodmindbackend.chat.domain.ChatPage;
 import com.foodmind.foodmindbackend.chat.domain.ChatReference;
-import com.foodmind.foodmindbackend.chat.domain.ChatRoute;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentCommand;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatAgentGenerationResult;
 import com.foodmind.foodmindbackend.chat.domain.agent.ChatConversationTurn;
@@ -25,7 +24,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -48,7 +46,7 @@ public class ChatMessageService {
     public static final int MAX_MESSAGE_LENGTH = 12000;
     public static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_RECENT_TURNS = 8;
-    private static final String CHAT_AGENT_CONTRACT_VERSION = "chat-agent-v1";
+    private static final String CHAT_AGENT_CONTRACT_VERSION = "chat-agent-v2";
     private static final String IDEMPOTENCY_OPERATION = "CHAT_MESSAGE_POST";
 
     private final ChatRepository chatRepository;
@@ -104,9 +102,8 @@ public class ChatMessageService {
             UUID sessionId,
             String content,
             List<UUID> referenceIds,
-            Boolean useSessionReferences,
-            String route) {
-        return post(userId, sessionId, content, referenceIds, useSessionReferences, route, null);
+            Boolean useSessionReferences) {
+        return post(userId, sessionId, content, referenceIds, useSessionReferences, null);
     }
 
     public ChatMessage post(
@@ -115,11 +112,9 @@ public class ChatMessageService {
             String content,
             List<UUID> referenceIds,
             Boolean useSessionReferences,
-            String route,
             String idempotencyKey) {
         // This method owns the full chat write path: validate input, resolve references, call the agent, then persist.
         String safeContent = validateContent(content);
-        ChatRoute requestedRoute = validateRequestedRoute(route);
         List<UUID> requestedReferenceIds = validateReferenceIds(referenceIds);
         chatRepository.findOwnedSession(userId, sessionId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -138,7 +133,6 @@ public class ChatMessageService {
                 safeContent,
                 requestedReferenceIds,
                 inheritSessionReferences,
-                requestedRoute,
                 idempotencyKey);
         if (idempotency != null && "COMPLETED".equals(idempotency.record().state())) {
             return replayCompleted(userId, sessionId, idempotency);
@@ -175,7 +169,10 @@ public class ChatMessageService {
         DelegationTokenIssuer.IssuedDelegationToken delegation = delegationTokenIssuer.issue(
                 userId,
                 traceId,
-                List.of(DelegationTokenIssuer.SCOPE_CHAT_SEARCH, DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE),
+                List.of(
+                        DelegationTokenIssuer.SCOPE_CHAT_SEARCH,
+                        DelegationTokenIssuer.SCOPE_CHAT_REFERENCE_RESOLVE,
+                        DelegationTokenIssuer.SCOPE_CHAT_PROFILE),
                 sharedReferences.stream().map(ChatReference::id).toList());
         ChatAgentCommand command = new ChatAgentCommand(
                 CHAT_AGENT_CONTRACT_VERSION,
@@ -186,7 +183,6 @@ public class ChatMessageService {
                 traceId,
                 OffsetDateTime.now().plusMinutes(2),
                 delegation.token(),
-                requestedRoute,
                 safeContent,
                 sharedReferences,
                 recentTurns);
@@ -206,7 +202,6 @@ public class ChatMessageService {
                     new com.foodmind.foodmindbackend.chat.domain.ChatSourcePointer(source.sourceType(), source.sourceId()))
                     .orElseThrow(() -> new ChatAgentValidationException("Agent cited an inaccessible source.")));
             meterRegistry.counter("foodmind.chat.grounding.rejected", "rejected", "false").increment();
-            meterRegistry.counter("foodmind.chat.route", "route", validated.route().name()).increment();
             assistantMessage = idempotencyRecordId == null
                     ? transactionService.completeGroundedMessage(
                             userId,
@@ -239,7 +234,6 @@ public class ChatMessageService {
             String content,
             List<UUID> referenceIds,
             boolean useSessionReferences,
-            ChatRoute route,
             String idempotencyKey) {
         if (idempotencyKey == null) {
             return null;
@@ -247,8 +241,7 @@ public class ChatMessageService {
         String canonicalRequest = sessionId
                 + "\ncontent=" + content.length() + ":" + content
                 + "\nreferenceIds=" + referenceIds.stream().map(UUID::toString).collect(Collectors.joining(","))
-                + "\nuseSessionReferences=" + useSessionReferences
-                + "\nroute=" + (route == null ? "" : route.name());
+                + "\nuseSessionReferences=" + useSessionReferences;
         return idempotencyService.beginAttempt(
                 userId,
                 IDEMPOTENCY_OPERATION,
@@ -290,25 +283,6 @@ public class ChatMessageService {
             throw new ApiException(ErrorCode.IDEMPOTENCY_CONFLICT);
         }
         return stored.id();
-    }
-
-    private ChatRoute validateRequestedRoute(String route) {
-        if (route == null || route.isBlank()) {
-            return null;
-        }
-        String normalized = route.trim().toUpperCase(Locale.ROOT);
-        try {
-            ChatRoute requested = ChatRoute.valueOf(normalized);
-            if (requested == ChatRoute.OUT_OF_SCOPE) {
-                throw new IllegalArgumentException("OUT_OF_SCOPE is agent-owned");
-            }
-            return requested;
-        } catch (IllegalArgumentException exception) {
-            throw new ApiException(
-                    ErrorCode.VALIDATION_ERROR,
-                    HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Chat supports search, summary, comparison, and navigation only.");
-        }
     }
 
     private List<UUID> validateReferenceIds(List<UUID> referenceIds) {

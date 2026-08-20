@@ -95,7 +95,7 @@ public class GenerateRecommendation {
         List<EvaluatedCandidate> evaluatedCandidates = context.candidates().stream()
                 .map(candidate -> filterPipeline.evaluate(request, context.preferences(), candidate))
                 .toList();
-        List<SelectedCandidate> selectedCandidates = fallbackSelector.select(evaluatedCandidates, context.preferences());
+        List<SelectedCandidate> selectedCandidates = fallbackSelector.select(evaluatedCandidates, request, context.preferences());
 
         RecommendationAgentCommand command = transactionService.createProcessingSession(
                 userId,

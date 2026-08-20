@@ -4,6 +4,9 @@ import com.foodmind.foodmindbackend.cooking.application.CookingPlanResultMapper;
 import com.foodmind.foodmindbackend.cooking.application.port.CookingPlanRepository;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanResult;
 import com.foodmind.foodmindbackend.cooking.domain.CookingPlanSummary;
+import com.foodmind.foodmindbackend.cooking.domain.CookingPlanExecution;
+import com.foodmind.foodmindbackend.common.error.ApiException;
+import com.foodmind.foodmindbackend.common.error.ErrorCode;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentConfirmationPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentFailedPlanResponse;
 import com.foodmind.foodmindbackend.cooking.domain.agent.AgentGeneratePlanRequest;
@@ -65,7 +68,53 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             List<AgentRecipeInput> sources,
             String traceId,
             String rawRequestJson) {
-        return createProcessing(userId, request, sources, traceId, rawRequestJson, null, null);
+        return createProcessing(userId, request, sources, traceId, rawRequestJson, null, null, null, null);
+    }
+
+    @Override
+    @Transactional
+    public UUID createProcessingWithReuseMetadata(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId) {
+        return createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                null, null, requestFingerprint, reusedFromPlanId);
+    }
+
+    @Override
+    @Transactional
+    public UUID createReusedReady(
+            UUID userId,
+            AgentGeneratePlanRequest request,
+            List<AgentRecipeInput> sources,
+            String traceId,
+            String rawRequestJson,
+            String requestFingerprint,
+            UUID reusedFromPlanId,
+            AgentReadyPlanResponse reusedResponse) {
+        UUID planId = createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                null, null, requestFingerprint, reusedFromPlanId);
+        AgentReadyPlanResponse rebound = new AgentReadyPlanResponse(
+                planId.toString(),
+                reusedResponse.status(),
+                reusedResponse.solverStatus(),
+                reusedResponse.makespanMinutes(),
+                reusedResponse.timeline(),
+                reusedResponse.completionChecklist(),
+                reusedResponse.miseEnPlace(),
+                reusedResponse.dishCompletions(),
+                reusedResponse.safetyPolicy(),
+                reusedResponse.explanation(),
+                reusedResponse.explanationSource(),
+                reusedResponse.executionFlow());
+        completeReady(userId, planId, rebound, toJson(rebound));
+        return planId;
     }
 
     @Override
@@ -81,7 +130,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
         if (parentPlanId == null || rootPlanId == null) {
             throw new IllegalArgumentException("Child cooking plans require parent and root plan IDs.");
         }
-        return createProcessing(userId, request, sources, traceId, rawRequestJson, parentPlanId, rootPlanId);
+        return createProcessing(
+                userId, request, sources, traceId, rawRequestJson,
+                parentPlanId, rootPlanId, null, null);
     }
 
     private UUID createProcessing(
@@ -91,7 +142,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             String traceId,
             String rawRequestJson,
             UUID parentPlanId,
-            UUID requestedRootPlanId) {
+            UUID requestedRootPlanId,
+            String requestFingerprint,
+            UUID reusedFromPlanId) {
         UUID planId = UUID.randomUUID();
         UUID rootPlanId = requestedRootPlanId == null ? planId : requestedRootPlanId;
         String correlationId = sanitiseCorrelationId(traceId);
@@ -99,12 +152,12 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 INSERT INTO cooking_plan (
                     id, user_id, parent_plan_id, root_plan_id, status, agent_request_id, plan_revision, region, cooking_date,
                     serving_at, time_limit_minutes, correlation_id, agent_trace_id, schema_version,
-                    request_context
+                    request_context, request_fingerprint, reused_from_plan_id
                 )
                 VALUES (
                     :id, :userId, :parentPlanId, :rootPlanId, 'PROCESSING', :agentRequestId, :planRevision, :region, :cookingDate,
                     :servingAt, :timeLimitMinutes, :correlationId, :agentTraceId, :schemaVersion,
-                    CAST(:requestContext AS jsonb)
+                    CAST(:requestContext AS jsonb), :requestFingerprint, :reusedFromPlanId
                 )
                 """,
                 new MapSqlParameterSource()
@@ -121,7 +174,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                         .addValue("correlationId", correlationId)
                         .addValue("agentTraceId", traceId)
                         .addValue("schemaVersion", request.schemaVersion())
-                        .addValue("requestContext", rawRequestJson == null ? "{}" : rawRequestJson));
+                        .addValue("requestContext", rawRequestJson == null ? "{}" : rawRequestJson)
+                        .addValue("requestFingerprint", requestFingerprint)
+                        .addValue("reusedFromPlanId", reusedFromPlanId));
         insertSources(planId, request, sources);
         insertAgentRequest(planId, userId, request, sources, correlationId);
         return planId;
@@ -249,7 +304,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 SELECT id, user_id, status, agent_request_id, plan_revision, region, cooking_date,
                        serving_at, time_limit_minutes, solver_status, makespan_minutes, correlation_id,
                        schema_version, error_code, error_message, request_context, response_json,
-                       safety_policy_json, created_at, completed_at
+                       safety_policy_json, created_at, completed_at, finished_at, reused_from_plan_id
                 FROM cooking_plan
                 WHERE id = :planId
                   AND user_id = :userId
@@ -264,6 +319,58 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             return Optional.empty();
         }
         return Optional.of(assemble(root.get()));
+    }
+
+    @Override
+    public Optional<ReusableReadyPlan> findReusableReadyPlan(UUID userId, String requestFingerprint) {
+        return jdbcTemplate.query("""
+                SELECT cp.id, cp.response_json::text AS response_json, cp.finished_at
+                FROM cooking_plan cp
+                WHERE cp.user_id = :userId
+                  AND cp.status = 'READY'
+                  AND cp.request_fingerprint = :requestFingerprint
+                  AND cp.response_json IS NOT NULL
+                  AND (
+                      SELECT count(*)
+                      FROM jsonb_array_elements(
+                          COALESCE(cp.response_json->'completion_checklist', '[]'::jsonb)
+                      ) completion_item
+                      CROSS JOIN LATERAL jsonb_array_elements(
+                          COALESCE(completion_item->'allocations', '[]'::jsonb)
+                      ) allocation
+                  ) = (
+                      SELECT count(*)
+                      FROM cooking_plan_completion_item ci
+                      JOIN cooking_plan_lot_allocation al ON al.completion_item_id = ci.id
+                      WHERE ci.plan_id = cp.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM (
+                          SELECT al.inventory_lot_id, sum(al.quantity) AS required_quantity
+                          FROM cooking_plan_completion_item ci
+                          JOIN cooking_plan_lot_allocation al ON al.completion_item_id = ci.id
+                          WHERE ci.plan_id = cp.id
+                          GROUP BY al.inventory_lot_id
+                      ) required
+                      LEFT JOIN inventory_lot lot ON lot.id = required.inventory_lot_id
+                      WHERE lot.id IS NULL
+                         OR lot.user_id <> :userId
+                         OR lot.on_hand - lot.reserved < required.required_quantity
+                         OR (lot.expiry_date IS NOT NULL AND lot.expiry_date < CURRENT_DATE)
+                  )
+                ORDER BY cp.created_at DESC, cp.id DESC
+                LIMIT 1
+                """,
+                new MapSqlParameterSource()
+                        .addValue("userId", userId)
+                        .addValue("requestFingerprint", requestFingerprint),
+                (rs, rowNum) -> new ReusableReadyPlan(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("response_json"),
+                        rs.getObject("finished_at", OffsetDateTime.class)))
+                .stream()
+                .findFirst();
     }
 
     @Override
@@ -300,34 +407,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
 
     @Override
     public List<CookingPlanSummary> findOwnedPage(UUID userId, int page, int size) {
-        return jdbcTemplate.query("""
-                SELECT cp.id,
-                       cp.status,
-                       cp.makespan_minutes,
-                       count(DISTINCT cps.sequence_no)::int AS source_count,
-                       count(DISTINCT cpt.task_id)::int AS task_count,
-                       cp.created_at,
-                       cp.completed_at
-                FROM cooking_plan cp
-                LEFT JOIN cooking_plan_source cps ON cps.plan_id = cp.id
-                LEFT JOIN cooking_plan_task cpt ON cpt.plan_id = cp.id
-                WHERE cp.user_id = :userId
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM cooking_plan newer
-                      WHERE newer.user_id = cp.user_id
-                        AND newer.root_plan_id = cp.root_plan_id
-                        AND (newer.created_at, newer.id) > (cp.created_at, cp.id)
-                  )
-                GROUP BY cp.id
-                ORDER BY cp.created_at DESC, cp.id DESC
-                LIMIT :limit OFFSET :offset
-                """,
-                new MapSqlParameterSource()
-                        .addValue("userId", userId)
-                        .addValue("limit", size)
-                        .addValue("offset", page * size),
-                this::summaryRow);
+        return findSummaryPage(userId, page, size, false);
     }
 
     @Override
@@ -340,6 +420,230 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 new MapSqlParameterSource("userId", userId),
                 Long.class);
         return count == null ? 0 : count;
+    }
+
+    @Override
+    public List<CookingPlanSummary> findSavedPage(UUID userId, int page, int size) {
+        return findSummaryPage(userId, page, size, true);
+    }
+
+    @Override
+    public long countSaved(UUID userId) {
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM cooking_plan
+                WHERE user_id = :userId AND saved_at IS NOT NULL
+                """, new MapSqlParameterSource("userId", userId), Long.class);
+        return count == null ? 0 : count;
+    }
+
+    private List<CookingPlanSummary> findSummaryPage(UUID userId, int page, int size, boolean savedOnly) {
+        String savedFilter = savedOnly ? """
+                  AND cp.saved_at IS NOT NULL
+                """ : "";
+        String latestRevisionFilter = savedOnly ? "" : """
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM cooking_plan newer
+                      WHERE newer.user_id = cp.user_id
+                        AND newer.root_plan_id = cp.root_plan_id
+                        AND (newer.created_at, newer.id) > (cp.created_at, cp.id)
+                  )
+                """;
+        return jdbcTemplate.query("""
+                SELECT cp.id,
+                       cp.status,
+                       cp.makespan_minutes,
+                       (SELECT count(*)::int FROM cooking_plan_source cps WHERE cps.plan_id = cp.id) AS source_count,
+                       (SELECT count(*)::int FROM cooking_plan_task cpt WHERE cpt.plan_id = cp.id) AS task_count,
+                       (SELECT count(*)::int
+                        FROM cooking_plan_execution_step ces
+                        WHERE ces.plan_id = cp.id
+                          AND ces.status = 'COMPLETED'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM cooking_plan_task cpt
+                              WHERE cpt.plan_id = cp.id
+                                AND cpt.task_id = ces.step_id
+                          )) AS completed_step_count,
+                       COALESCE((SELECT array_agg(cps.dish_name ORDER BY cps.sequence_no) FROM cooking_plan_source cps WHERE cps.plan_id = cp.id), ARRAY[]::varchar[]) AS dish_names,
+                       cp.created_at,
+                       cp.completed_at,
+                       cp.saved_at,
+                       cp.finished_at
+                FROM cooking_plan cp
+                WHERE cp.user_id = :userId
+                """ + savedFilter + latestRevisionFilter + """
+                ORDER BY %s DESC NULLS LAST, cp.id DESC
+                LIMIT :limit OFFSET :offset
+                """.formatted(savedOnly ? "cp.saved_at" : "cp.created_at"),
+                new MapSqlParameterSource()
+                        .addValue("userId", userId)
+                        .addValue("limit", size)
+                        .addValue("offset", Math.multiplyExact((long) page, (long) size)),
+                this::summaryRow);
+    }
+
+    @Override
+    public Optional<CookingPlanExecution> findExecution(UUID userId, UUID planId) {
+        Optional<ExecutionRoot> root = jdbcTemplate.query("""
+                SELECT id, saved_at, finished_at, execution_version
+                FROM cooking_plan
+                WHERE id = :planId AND user_id = :userId
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("userId", userId),
+                (rs, rowNum) -> new ExecutionRoot(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("saved_at", OffsetDateTime.class),
+                        rs.getObject("finished_at", OffsetDateTime.class),
+                        rs.getLong("execution_version")))
+                .stream().findFirst();
+        if (root.isEmpty()) {
+            return Optional.empty();
+        }
+        List<CookingPlanExecution.Step> steps = jdbcTemplate.query("""
+                SELECT step_id, status, updated_at
+                FROM cooking_plan_execution_step
+                WHERE plan_id = :planId
+                ORDER BY created_at, step_id
+                """, new MapSqlParameterSource("planId", planId),
+                (rs, rowNum) -> new CookingPlanExecution.Step(
+                        rs.getString("step_id"),
+                        rs.getString("status"),
+                        rs.getObject("updated_at", OffsetDateTime.class)));
+        ExecutionRoot value = root.get();
+        return Optional.of(new CookingPlanExecution(
+                value.planId(), value.savedAt(), value.finishedAt(), value.version(), steps));
+    }
+
+    @Override
+    @Transactional
+    public void setSaved(UUID userId, UUID planId, boolean saved, boolean resetProgress) {
+        ExecutionPlanRow plan = lockExecutionPlan(userId, planId);
+        if (!"READY".equals(plan.status())) {
+            throw new ApiException(ErrorCode.CONFLICT, "Only ready cooking plans can be saved.");
+        }
+        if (resetProgress) {
+            if (plan.finishedAt() != null) {
+                throw new ApiException(ErrorCode.CONFLICT, "A finished plan's progress cannot be reset.");
+            }
+            jdbcTemplate.update("DELETE FROM cooking_plan_execution_step WHERE plan_id = :planId",
+                    new MapSqlParameterSource("planId", planId));
+        }
+        jdbcTemplate.update("""
+                UPDATE cooking_plan
+                SET saved_at = CASE WHEN :saved THEN COALESCE(saved_at, CURRENT_TIMESTAMP) ELSE NULL END,
+                    execution_version = execution_version + 1,
+                    version = version + 1
+                WHERE id = :planId AND user_id = :userId
+                """, new MapSqlParameterSource()
+                .addValue("saved", saved)
+                .addValue("planId", planId)
+                .addValue("userId", userId));
+    }
+
+    @Override
+    @Transactional
+    public void updateExecutionStep(
+            UUID userId,
+            UUID planId,
+            String stepId,
+            String status,
+            long expectedVersion) {
+        ExecutionPlanRow plan = lockExecutionPlan(userId, planId);
+        requireMutableExecution(plan, expectedVersion);
+        if (!knownExecutionStep(planId, stepId)) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "The execution step does not belong to this plan.");
+        }
+        String current = jdbcTemplate.query("""
+                SELECT status FROM cooking_plan_execution_step
+                WHERE plan_id = :planId AND step_id = :stepId
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("stepId", stepId),
+                (rs, rowNum) -> rs.getString("status"))
+                .stream().findFirst().orElse(null);
+        if (status.equals(current)) {
+            return;
+        }
+        boolean validTransition = (current == null && "IN_PROGRESS".equals(status))
+                || ("IN_PROGRESS".equals(current) && "COMPLETED".equals(status));
+        if (!validTransition) {
+            throw new ApiException(ErrorCode.CONFLICT, "Cooking step state changed; refresh the plan and try again.");
+        }
+        jdbcTemplate.update("""
+                INSERT INTO cooking_plan_execution_step (plan_id, step_id, status)
+                VALUES (:planId, :stepId, :status)
+                ON CONFLICT (plan_id, step_id)
+                DO UPDATE SET status = EXCLUDED.status
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("stepId", stepId)
+                .addValue("status", status));
+        incrementExecutionVersion(userId, planId);
+    }
+
+    @Override
+    @Transactional
+    public void resetExecution(UUID userId, UUID planId, long expectedVersion) {
+        ExecutionPlanRow plan = lockExecutionPlan(userId, planId);
+        requireMutableExecution(plan, expectedVersion);
+        jdbcTemplate.update("DELETE FROM cooking_plan_execution_step WHERE plan_id = :planId",
+                new MapSqlParameterSource("planId", planId));
+        incrementExecutionVersion(userId, planId);
+    }
+
+    private ExecutionPlanRow lockExecutionPlan(UUID userId, UUID planId) {
+        return jdbcTemplate.query("""
+                SELECT status, finished_at, execution_version
+                FROM cooking_plan
+                WHERE id = :planId AND user_id = :userId
+                FOR UPDATE
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("userId", userId),
+                (rs, rowNum) -> new ExecutionPlanRow(
+                        rs.getString("status"),
+                        rs.getObject("finished_at", OffsetDateTime.class),
+                        rs.getLong("execution_version")))
+                .stream().findFirst()
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    private void requireMutableExecution(ExecutionPlanRow plan, long expectedVersion) {
+        if (!"READY".equals(plan.status()) || plan.finishedAt() != null) {
+            throw new ApiException(ErrorCode.CONFLICT, "Only an unfinished ready plan can update progress.");
+        }
+        if (plan.version() != expectedVersion) {
+            throw new ApiException(ErrorCode.CONFLICT, "Cooking progress changed on another client; refresh and try again.");
+        }
+    }
+
+    private boolean knownExecutionStep(UUID planId, String stepId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT count(*)::int
+                FROM (
+                    SELECT task_id AS step_id FROM cooking_plan_task WHERE plan_id = :planId
+                    UNION ALL
+                    SELECT 'mise:' || sequence_no::text AS step_id FROM cooking_plan_mise_en_place WHERE plan_id = :planId
+                ) known
+                WHERE known.step_id = :stepId
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("stepId", stepId), Integer.class);
+        return count != null && count > 0;
+    }
+
+    private void incrementExecutionVersion(UUID userId, UUID planId) {
+        jdbcTemplate.update("""
+                UPDATE cooking_plan
+                SET execution_version = execution_version + 1,
+                    version = version + 1
+                WHERE id = :planId AND user_id = :userId
+                """, new MapSqlParameterSource()
+                .addValue("planId", planId)
+                .addValue("userId", userId));
     }
 
     @Override
@@ -797,7 +1101,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 timeline(root.id()),
                 miseEnPlace(root.id()),
@@ -825,7 +1129,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 assumptions(root.id()),
@@ -851,7 +1155,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -864,7 +1168,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -877,7 +1181,7 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 root.id(), root.status(), root.planRevision(), root.region(), root.cookingDate(),
                 root.servingAt(), root.timeLimitMinutes(), root.solverStatus(), root.makespanMinutes(),
                 root.correlationId(), root.schemaVersion(), root.errorCode(), root.errorMessage(),
-                root.createdAt(), root.completedAt(),
+                root.createdAt(), root.completedAt(), root.finishedAt(), root.reusedFromPlanId(),
                 sources,
                 List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(),
@@ -1140,7 +1444,9 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 rs.getString("response_json"),
                 rs.getString("safety_policy_json"),
                 rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("completed_at", OffsetDateTime.class));
+                rs.getObject("completed_at", OffsetDateTime.class),
+                rs.getObject("finished_at", OffsetDateTime.class),
+                rs.getObject("reused_from_plan_id", UUID.class));
     }
 
     private CookingPlanSummary summaryRow(ResultSet rs, int rowNum) throws SQLException {
@@ -1149,9 +1455,13 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
                 rs.getString("status"),
                 rs.getInt("source_count"),
                 rs.getInt("task_count"),
+                rs.getInt("completed_step_count"),
                 nullableInt(rs, "makespan_minutes"),
+                stringArray(rs.getArray("dish_names")),
                 rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("completed_at", OffsetDateTime.class));
+                rs.getObject("completed_at", OffsetDateTime.class),
+                rs.getObject("saved_at", OffsetDateTime.class),
+                rs.getObject("finished_at", OffsetDateTime.class));
     }
 
     private static Integer nullableInt(ResultSet rs, String column) throws SQLException {
@@ -1245,6 +1555,18 @@ public class JdbcCookingPlanRepository implements CookingPlanRepository {
             String responseJson,
             String safetyPolicyJson,
             OffsetDateTime createdAt,
-            OffsetDateTime completedAt) {
+            OffsetDateTime completedAt,
+            OffsetDateTime finishedAt,
+            UUID reusedFromPlanId) {
+    }
+
+    private record ExecutionRoot(
+            UUID planId,
+            OffsetDateTime savedAt,
+            OffsetDateTime finishedAt,
+            long version) {
+    }
+
+    private record ExecutionPlanRow(String status, OffsetDateTime finishedAt, long version) {
     }
 }

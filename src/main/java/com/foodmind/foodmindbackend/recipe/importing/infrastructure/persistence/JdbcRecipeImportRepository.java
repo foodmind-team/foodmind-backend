@@ -51,7 +51,8 @@ public class JdbcRecipeImportRepository implements RecipeImportRepository {
                 VALUES (
                     :id, :owner, :sourceText, :status, CAST(:drafts AS jsonb), CAST(:questions AS jsonb),
                     CAST(:answers AS jsonb), CAST(:createdRecipeIds AS jsonb), :failureCode, :failureMessage,
-                    :createdAt, :updatedAt, :completedAt, :version)
+                    LEAST(:createdAt, CURRENT_TIMESTAMP), LEAST(:updatedAt, CURRENT_TIMESTAMP),
+                    :completedAt, :version)
                 """, parameters(session));
         return findOwned(session.ownerUserId(), session.id()).orElseThrow();
     }

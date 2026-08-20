@@ -138,7 +138,49 @@ class AgentResultValidatorTest {
     }
 
     @Test
-    void rejectsCandidatesThatAreNotOrderedByDescendingModelScore() throws Exception {
+    void acceptsWantToTryCandidateAheadOfHigherModelScore() {
+        AgentGenerationResult result = AgentGenerationResult.success(
+                AgentResultValidator.SUPPORTED_CONTRACT_VERSION,
+                REQUEST_ID,
+                SESSION_ID,
+                TRACE_ID,
+                "agent-trace-want-to-try-lead",
+                "SUCCEEDED",
+                "recommendation-agent-demo-2026-07-30",
+                AgentResultValidator.FEATURE_SCHEMA_VERSION,
+                List.of(
+                        new AgentCandidateResult(
+                                SECOND_CANDIDATE_ID,
+                                1,
+                                RecommendationType.PERSONAL,
+                                new BigDecimal("0.4000000"),
+                                List.of(ReasonCode.WANT_TO_TRY),
+                                "You marked this as Want to Try.",
+                                Map.of()),
+                        new AgentCandidateResult(
+                                FIRST_CANDIDATE_ID,
+                                2,
+                                RecommendationType.PERSONAL,
+                                new BigDecimal("0.9200000"),
+                                List.of(ReasonCode.CUISINE_MATCH),
+                                "Matches your cuisine pattern.",
+                                Map.of()),
+                        new AgentCandidateResult(
+                                THIRD_CANDIDATE_ID,
+                                3,
+                                RecommendationType.GROUP_INSPIRED,
+                                new BigDecimal("0.7100000"),
+                                List.of(ReasonCode.TRUSTED_GROUP_RATING),
+                                "Your trusted group has strong evidence for this meal.",
+                                Map.of())));
+
+        assertThat(validator.validate(commandWithWantToTrySecond(), result).candidates())
+                .extracting("candidateId")
+                .containsExactly(SECOND_CANDIDATE_ID, FIRST_CANDIDATE_ID, THIRD_CANDIDATE_ID);
+    }
+
+    @Test
+    void rejectsCandidatesThatBreakWantToTryThenModelScoreOrder() throws Exception {
         AgentGenerationResult result = resultFromFixture("valid-normal-response.json");
         List<AgentCandidateResult> reversedScores = result.candidates().stream()
                 .map(candidate -> new AgentCandidateResult(
@@ -179,6 +221,21 @@ class AgentResultValidatorTest {
                 List.of(
                         agentCandidate(FIRST_CANDIDATE_ID, "INDIAN", null, 0, false, 0, null),
                         agentCandidate(SECOND_CANDIDATE_ID, "JAPANESE", new BigDecimal("1.4"), 0, false, 0, null),
+                        agentCandidate(THIRD_CANDIDATE_ID, "INDIAN", null, 0, false, 2, new BigDecimal("4.70"))));
+    }
+
+    private RecommendationAgentCommand commandWithWantToTrySecond() {
+        return new RecommendationAgentCommand(
+                AgentResultValidator.SUPPORTED_CONTRACT_VERSION,
+                REQUEST_ID,
+                SESSION_ID,
+                TRACE_ID,
+                OffsetDateTime.parse("2030-07-30T12:00:02Z"),
+                Map.of("mealType", "DINNER"),
+                Map.of("currency", "SGD"),
+                List.of(
+                        agentCandidate(FIRST_CANDIDATE_ID, "INDIAN", null, 0, false, 0, null),
+                        agentCandidate(SECOND_CANDIDATE_ID, "JAPANESE", new BigDecimal("1.4"), 0, true, 0, null),
                         agentCandidate(THIRD_CANDIDATE_ID, "INDIAN", null, 0, false, 2, new BigDecimal("4.70"))));
     }
 

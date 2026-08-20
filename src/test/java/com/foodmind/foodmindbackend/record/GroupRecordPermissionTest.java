@@ -74,7 +74,12 @@ class GroupRecordPermissionTest extends PostgreSqlContainerSupport {
 
         mockMvc.perform(get("/api/v1/food-records/{id}", recordId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManage").value(false));
+        mockMvc.perform(get("/api/v1/food-records/{id}", recordId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(memberToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManage").value(true));
         mockMvc.perform(patch("/api/v1/food-records/{id}", recordId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
                         .header(HttpHeaders.IF_MATCH, "\"0\"")
