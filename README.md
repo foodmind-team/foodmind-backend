@@ -108,6 +108,40 @@ Copy `.env.example` rather than committing credentials. The important local sett
 
 The sample values are local-only placeholders. Never use them outside development, and never commit a populated `.env` file.
 
+## API keys and private service tokens
+
+For a Backend-only checkout, copy `.env.example` to ignored `.env` and set
+values there or in the IDE run configuration. The public client never supplies
+these values. The Backend alone authenticates users and then calls private
+services with its service tokens.
+
+```dotenv
+# Use a unique secret for local JWT signing and Backend-internal tools.
+JWT_SECRET=<random-local-secret-at-least-32-characters>
+INTERNAL_SERVICE_TOKEN=<backend-internal-tools-token>
+
+# Each Backend token must match the token configured by that target Agent.
+RECOMMENDATION_AGENT_SERVICE_TOKEN=<recommendation-service-token>
+COOKING_AGENT_SERVICE_TOKEN=<cooking-service-token>
+CHAT_AGENT_SERVICE_TOKEN=<chat-service-token>
+
+# Optional Backend-owned OneMap integration; leave disabled without a token.
+ONEMAP_ROUTES_ENABLED=true
+ONEMAP_API_TOKEN=<onemap-access-token>
+```
+
+When using the integrated Docker stack, set these values once in
+[FoodMind Infrastructure](https://github.com/foodmind-team/foodmind-infra)'s
+`.env` instead; Compose supplies matching values to the Backend and private
+services. For standalone service diagnostics, configure each `*_BASE_URL` with
+the actual listener and make its paired `*_SERVICE_TOKEN` identical on both
+sides. Never expose those URLs or tokens to Web/Android.
+
+`MEDIA_ENABLED` requires a bucket, endpoint, region, access key, and secret
+key suitable for the selected S3-compatible store. Keep it `false` for normal
+local CRUD work. Do not copy local MinIO credentials into a cloud environment;
+use the platform's approved secret store and role-based credentials there.
+
 ## API contract
 
 The canonical public OpenAPI document is [`src/main/resources/openapi/openapi.yaml`](src/main/resources/openapi/openapi.yaml). Web and Android keep versioned snapshots of this contract. For a public API change, update the implementation, OpenAPI description, examples, and consumer snapshots together.
