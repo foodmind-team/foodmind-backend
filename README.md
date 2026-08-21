@@ -56,6 +56,43 @@ The local profile applies Flyway migrations automatically. It uses the PostgreSQ
 
 Private AI services are optional for basic CRUD development. Start the complete local dependency stack from [FoodMind Infrastructure](https://github.com/foodmind-team/foodmind-infra) when testing recommendation, cooking, or chat flows end to end.
 
+## Local deployment
+
+Choose the startup path that matches the work being performed:
+
+- **Backend-only development:** use this repository's PostgreSQL container and
+  run Spring Boot locally for CRUD, contract, persistence, and security work.
+- **Full product journey:** start [FoodMind Infrastructure](https://github.com/foodmind-team/foodmind-infra)
+  first. Its Docker Compose stack starts this Backend with PostgreSQL, MinIO,
+  the model package, and private runtime dependencies. Web and Android still
+  call only this Backend at `http://localhost:8080`.
+
+For an isolated Windows PowerShell Backend setup:
+
+```powershell
+git clone https://github.com/foodmind-team/foodmind-backend.git
+Set-Location foodmind-backend
+Copy-Item .env.example .env
+docker compose up -d postgres
+Get-Content .env | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    Set-Item -Path "Env:$($matches[1].Trim())" -Value $matches[2]
+  }
+}
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Wait for `http://localhost:8080/actuator/health/readiness` to report `UP`
+before starting a client. The local profile applies Flyway migrations. When
+`5432` is already occupied, change both `POSTGRES_PORT` and `DB_URL` in the
+ignored `.env` so the database container and the locally running Backend agree.
+Use `docker compose logs -f postgres` for database diagnostics and `docker
+compose down` to stop the local dependency while preserving its volume.
+
+Do not configure Web or Android with Agent, inference, database, or storage
+URLs. Private service tokens and optional provider credentials remain
+server-side; only the public `/api/v1` Backend contract is a client boundary.
+
 ## Configuration
 
 Copy `.env.example` rather than committing credentials. The important local settings are:
